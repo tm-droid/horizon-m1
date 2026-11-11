@@ -1,0 +1,58 @@
+--- a/crates/horizon-threads/src/lib.rs
++++ b/crates/horizon-threads/src/lib.rs
+@@ -137,6 +137,34 @@
+ /// of waiting behind them. Nothing elsewhere. Whether the OS took it.
+ pub fn behind_server() -> bool {
+     HELPERS_BEHIND.load(Ordering::Relaxed) && behind()
++}
++
++/// Called by a general job-pool worker and by a LAN chunk-encode thread as it
++/// starts: the other bulk helpers (meshing, lighting, chunk encoding) that the
++/// render thread must never wait behind. Like `behind_server` it only acts after
++/// `put_helpers_behind`. On Linux and Android that is `behind_server`. On macOS
++/// `behind` does nothing, and a thread started from the render thread inherits its
++/// user-interactive quality of service, so the helpers competed with it for the
++/// four performance cores. They now drop to user-initiated at the lowest relative
++/// priority: below the render, server and remote-chunk threads, above the default
++/// and utility classes, and still free to use performance cores (utility would
++/// steer them to the efficiency cores and slow chunk loading). Windows is unchanged.
++/// Whether the OS took it.
++pub fn pool_helper_current() -> bool {
++    HELPERS_BEHIND.load(Ordering::Relaxed) && pool_helper()
++}
++
++#[cfg(target_vendor = "apple")]
++fn pool_helper() -> bool {
++    // SAFETY: sets the calling thread's own QoS class; no pointers.
++    unsafe {
++        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INITIATED, -15) == 0
++    }
++}
++
++#[cfg(not(target_vendor = "apple"))]
++fn pool_helper() -> bool {
++    behind()
+ }
+ 
+ #[cfg(any(target_os = "linux", target_os = "android"))]
+--- a/crates/horizon-threads/src/jobs.rs
++++ b/crates/horizon-threads/src/jobs.rs
+@@ -219,7 +219,7 @@
+                 .name(format!("{name}-{i}"))
+                 .spawn(move || {
+                     // Ticks and frames come first.
+-                    crate::behind_server();
++                    crate::pool_helper_current();
+                     work(&worker, i);
+                 });
+             if spawned.is_ok() {
+--- a/crates/horizon-client/src/lan/chunks.rs
++++ b/crates/horizon-client/src/lan/chunks.rs
+@@ -390,6 +390,7 @@
+                 std::thread::Builder::new()
+                     .name(format!("horizon-chunk-encode-{i}"))
+                     .spawn(move || {
++                        horizon_threads::pool_helper_current();
+                         let mut done = 0;
+                         loop {
+                             let job = {

@@ -1,0 +1,193 @@
+--- a/crates/horizon-client/src/mobs/render.rs
++++ b/crates/horizon-client/src/mobs/render.rs
+@@ -1391,7 +1391,7 @@
+ #[derive(Clone, Copy)]
+ struct PartPaint<'a> {
+     layer: &'a super::cem::CemLayer,
+-    atlas: Atlas<'a>,
++    sprite: Atlas<'a>,
+     overlay: bool,
+ }
+ #[allow(clippy::too_many_arguments)]
+@@ -1414,7 +1414,7 @@
+         return;
+     }
+     let normals = normals.part(p);
+-    let explicit = paint.and_then(|paint| (paint.atlas)(paint.layer.part_textures.get(&part.name)?));
++    let explicit = paint.and_then(|paint| (paint.sprite)(paint.layer.part_textures.get(&part.name)?));
+     if explicit.is_some() && paint.is_some_and(|paint| paint.overlay) {
+         return;
+     }
+@@ -1860,8 +1860,8 @@
+ /// drawn but not listed here never gets a random pick): the body's and each layer's, a
+ /// custom model's own texture beside them (`cem_texture` falls back to the vanilla one when
+ /// the atlas lacks it, and only the layer a `.jem` was made for takes it, `paints_with_jem`),
+-/// and the warden's glowing layers (whether they glow this frame or not). Random textures
+-/// choose a variant for each.
++/// and the warden's glowing layers (whether they glow this frame or not). The custom
++/// body's explicit part textures come after those so they cannot become the primary pick.
+ pub fn drawn_textures(m: &Mob, data: &MobData) -> Vec<String> {
+     fn push(names: &mut Vec<String>, custom: Option<&super::cem::CemLayer>, vanilla: String) {
+         if let Some(texture) = custom.and_then(|c| c.texture.clone()) {
+@@ -1876,7 +1876,8 @@
+     let (model_key, texture) = body(m);
+     let cem_key = cem_key(&model_key);
+     let mut names = Vec::new();
+-    push(&mut names, cem.layer(cem_key), texture.into_owned());
++    let custom_body = cem.layer(cem_key);
++    push(&mut names, custom_body, texture.into_owned());
+     let mut all_layers = layers(m, m.age as f32);
+     if m.species() == Species::Warden {
+         for (model, texture, _) in super::warden::emissive_layers(m, 0.0) {
+@@ -1895,6 +1896,9 @@
+             .layer(&layer.model)
+             .filter(|_| paints_with_jem(&all_layers, i, body_keys));
+         push(&mut names, custom, layer.texture.to_string());
++    }
++    if let Some(custom) = custom_body {
++        names.extend(custom.part_textures.values().cloned());
+     }
+     names
+ }
+@@ -2081,9 +2085,12 @@
+     if !posable {
+         skin = None;
+     }
++    let part_sprite = |texture: &str| {
++        sprite(texture).map(|(_, uv)| uv).or_else(|| atlas(texture))
++    };
+     let part_paint = custom_body
+         .filter(|layer| !layer.part_textures.is_empty())
+-        .map(|layer| PartPaint { layer, atlas, overlay: false });
++        .map(|layer| PartPaint { layer, sprite: &part_sprite, overlay: false });
+     let draw_body = |out: &mut Vec<Vertex>, skin: &mut Option<&mut super::skin::Skin>| {
+         // A player or mannequin whose skin has no atlas sprite (an evicted or
+         // never stored download) draws with its default skin, not invisibly.
+--- a/crates/horizon-client/src/mobs/cem.rs
++++ b/crates/horizon-client/src/mobs/cem.rs
+@@ -1023,16 +1023,8 @@
+             .collect();
+         Arc::new(kind)
+     }
+-    /// How many vertices `render` draws of `mob` in each of `sprites`, laid far apart in the
+-    /// atlas: the sprite a vertex's UV falls in says what it drew with. `sprites[0]`, the
+-    /// `.jem`'s texture, is in the atlas only with `custom`.
+-    fn sprite_counts(
+-        mob: &super::super::Mob,
+-        models: &Arc<CemModels>,
+-        sprites: &[&str],
+-        custom: bool,
+-    ) -> Vec<usize> {
+-        let data = super::super::MobData {
++    fn mob_data(models: &Arc<CemModels>) -> super::super::MobData {
++        super::super::MobData {
+             states: Vec::new(),
+             placements: Default::default(),
+             heightmaps: Default::default(),
+@@ -1046,7 +1038,26 @@
+             blinks: Default::default(),
+             pois: Default::default(),
+             species_placements: Default::default(),
+-        };
++        }
++    }
++
++    fn sprite_counts(
++        mob: &super::super::Mob,
++        models: &Arc<CemModels>,
++        sprites: &[&str],
++        custom: bool,
++    ) -> Vec<usize> {
++        draw_sprite_counts(mob, &mob_data(models), sprites, custom)
++    }
++
++    /// How many vertices `render` draws of `mob` in each of `sprites`, laid far apart in the
++    /// atlas. The first sprite is in the atlas only with `custom`.
++    fn draw_sprite_counts(
++        mob: &super::super::Mob,
++        data: &super::super::MobData,
++        sprites: &[&str],
++        custom: bool,
++    ) -> Vec<usize> {
+         let atlas = |name: &str| -> Option<[f32; 4]> {
+             let i = sprites.iter().position(|s| *s == name)?;
+             let lo = i as f32 * 0.2;
+@@ -1059,7 +1070,7 @@
+             glam::DVec3::ZERO,
+             &atlas,
+             0xf0f0,
+-            &data,
++            data,
+             &mut vertices,
+         );
+         let mut counts = vec![0; sprites.len()];
+@@ -1189,6 +1200,69 @@
+         ];
+         assert_eq!(sprite_counts(&mob, &cem, &sprites, true), [72, 4, 4]);
+         assert_eq!(sprite_counts(&mob, &cem, &sprites, false), [0, 76, 76]);
++    }
++
++    #[test]
++    fn a_part_only_sprite_uses_color_and_name_rules_and_falls_back() {
++        use super::super::{Anim, Mob, Species, random_textures};
++        use horizon_optifine::{random::Weather, random_textures::RandomTextures};
++
++        let mut tree = plane("root", vec![plane("body", vec![])]);
++        tree.polygons.clear();
++        let jem = format!(
++            r#"{{"models": [{{"part": "body", "attach": true,
++                "texture": "textures/entity/sheep/accessory.png", {BOX}}}]}}"#
++        );
++        let cem = Arc::new(models(
++            "render-part-variants",
++            &[("optifine/cem/sheep.jem", &jem)],
++            &["sheep#main"],
++            &tree,
++        ));
++        let kind = mob_kind(
++            "minecraft:sheep", Species::Sheep, Anim::Sheep,
++            "entity/sheep/sheep", &["sheep#main"], &tree,
++        );
++        let mut mob = Mob::new(1, kind, horizon_core::geometry::Vec3::ZERO, 0.0);
++        let root = pack(
++            "render-part-variant-rules",
++            &[
++                ("optifine/random/entity/sheep/accessory.properties",
++                 "textures.1=3\nname.1=iregex:Cletus\ntextures.2=2\ncolors.2=red"),
++                ("optifine/random/entity/sheep/accessory2.png", ""),
++                ("optifine/random/entity/sheep/accessory3.png", ""),
++            ],
++        );
++        let mut data = mob_data(&cem);
++        *data.random_textures.get_mut().unwrap() = RandomTextures::scan(&root);
++        fs::remove_dir_all(root).unwrap();
++        let textures = data.random_textures.read().unwrap();
++        let seen = random_textures::Seen {
++            biome: None,
++            y: 64,
++            blocks: Vec::new(),
++            moon_phase: 0,
++            day_time: 0,
++            weather: Weather::Clear,
++        };
++        let sprites = [
++            "minecraft:optifine/random/entity/sheep/accessory2",
++            "entity/sheep/accessory",
++            "entity/sheep/sheep",
++            "minecraft:optifine/random/entity/sheep/accessory3",
++        ];
++
++        mob.extra.color = 14; // red
++        random_textures::choose(&mut mob, &textures, &data, Some(seen), 0);
++        assert_eq!(draw_sprite_counts(&mob, &data, &sprites, true), [24, 0, 4, 0]);
++        assert_eq!(draw_sprite_counts(&mob, &data, &sprites, false), [0, 24, 4, 0]);
++        mob.custom_name = Some("Cletus".into());
++        random_textures::choose(&mut mob, &textures, &data, None, 0);
++        assert_eq!(draw_sprite_counts(&mob, &data, &sprites, true), [0, 0, 4, 24]);
++        mob.custom_name = None;
++        mob.extra.color = 0;
++        random_textures::choose(&mut mob, &textures, &data, None, 0);
++        assert_eq!(draw_sprite_counts(&mob, &data, &sprites, true), [0, 24, 4, 0]);
+     }
+ 
+     /// A wolf armour `.jem`'s texture paints the armour, the first layer on its model, and

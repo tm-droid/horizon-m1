@@ -1,0 +1,15 @@
+# Nightly 66f3981, in application order.
+# Upstream-covered: qos-backport, sprite-compress, colortex-lazy-b, a66f8fa2.
+cloud-prep
+shadow-scratch
+jobpool-qos
+emissive-bsearch
+pass-merge
+shadow-dedup
+particle-cull
+adaptive-upload
+pbr-cpu-drop
+anim-frame-compact
+arena-thresholds
+audio-cache
+composite-overwrite

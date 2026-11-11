@@ -1,0 +1,222 @@
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -376,6 +376,10 @@
+     compute: Vec<Pass>,
+     /// Writes no buffer, only images: draws into `Targets::sink`.
+     sink: bool,
++    /// Writes every pixel of its buffers: a quad covering them (`PostProgram::covers`), no
++    /// `discard`, no blending and no `scale.<program>`. Its attachments need not load the old
++    /// contents, which a tiled GPU then skips reading.
++    overwrites: bool,
+     /// Instances to draw for a geometry stage folded into the vertex stage; 0 without one.
+     geometry: u32,
+     /// The pack's images (bit n: `image.*` n) this pass samples and stores: sampled from a copy
+@@ -958,6 +962,22 @@
+     }
+ }
+ 
++/// Whether `module` can `discard`: a kill anywhere in its functions or entry points.
++fn kills(module: &naga::Module) -> bool {
++    fn block(b: &naga::Block) -> bool {
++        b.iter().any(|s| match s {
++            naga::Statement::Kill => true,
++            naga::Statement::Block(b) => block(b),
++            naga::Statement::If { accept, reject, .. } => block(accept) || block(reject),
++            naga::Statement::Switch { cases, .. } => cases.iter().any(|c| block(&c.body)),
++            naga::Statement::Loop { body, continuing, .. } => block(body) || block(continuing),
++            _ => false,
++        })
++    }
++    module.functions.iter().any(|(_, f)| block(&f.body))
++        || module.entry_points.iter().any(|e| block(&e.function.body))
++}
++
+ fn target(format: wgpu::TextureFormat) -> Option<wgpu::ColorTargetState> {
+     Some(wgpu::ColorTargetState {
+         format,
+@@ -1546,6 +1566,16 @@
+     } else {
+         (written & !kept) | mask(&p.flips)
+     };
++    let overwrites = !final_pass
++        && !sink
++        && geometry.is_none()
++        && p.covers
++        && p.scale == [1.0, 0.0, 0.0]
++        && targets
++            .iter()
++            .flatten()
++            .all(|t| t.blend.is_none() && t.write_mask == wgpu::ColorWrites::ALL)
++        && !kills(&program.fragment);
+     let created = checked(device, || {
+         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+             label: Some(&p.name),
+@@ -1669,6 +1699,7 @@
+         images,
+         compute: Vec::new(),
+         sink,
++        overwrites,
+         geometry: p.geometry_triangles,
+         viewport: (!final_pass && p.scale != [1.0, 0.0, 0.0]).then_some(p.scale),
+         image_copies,
+@@ -1801,6 +1832,7 @@
+         images,
+         compute: Vec::new(),
+         sink: false,
++        overwrites: false,
+         geometry: 0,
+         image_copies,
+         snapshots,
+@@ -2197,6 +2229,11 @@
+             .filter(|p| !skip.split(',').any(|s| s == p.name))
+             .filter_map(|p| build(p, None))
+             .collect();
++        notes.push(format!(
++            "overwrite attachment loads for {} of {} post passes",
++            passes.iter().filter(|p| p.overwrites).count(),
++            passes.len()
++        ));
+         let stand_ins = pack_images::stand_ins(device, stand_ins.take());
+         if let Some(t) = &terrain {
+             notes.push(format!("terrain draws with {}", t.name));
+@@ -4298,14 +4335,15 @@
+             };
+             let mut attachments: Vec<Option<wgpu::RenderPassColorAttachment>> = Vec::new();
+             // Vertex coverage and fragment discard can leave alternate pixels untouched.
+-            // The unused sink can still skip loading its old contents.
+-            let ops = if !pass.sink || pass.viewport.is_some() {
++            // The unused sink can still skip loading its old contents, and so can a pass
++            // proven to write every pixel (`Pass::overwrites`).
++            let ops = if pass.overwrites || (pass.sink && pass.viewport.is_none()) {
++                overwrite
++            } else {
+                 wgpu::Operations {
+                     load: wgpu::LoadOp::Load,
+                     store: wgpu::StoreOp::Store,
+                 }
+-            } else {
+-                overwrite
+             };
+             if final_pass {
+                 attachments.push(attach(screen, overwrite));
+--- a/crates/horizon-shaders/src/post.rs
++++ b/crates/horizon-shaders/src/post.rs
+@@ -232,6 +232,48 @@
+     /// `scale.<name>`: (scale, offset x, offset y), the part of its buffers a program draws, as
+     /// fractions of their size from GL's bottom-left corner; [1, 0, 0] (all of them) without.
+     pub scale: [f32; 3],
++    /// A program drawing our quad (not gbuffers or shadow geometry) whose vertex stage leaves
++    /// it where it is (`covers_target`): the quad covers every pixel of its buffers. False for
++    /// gbuffers, shadow, geometry-stage and compute-only programs.
++    pub covers: bool,
++}
++
++/// Whether composite vertex stage `code` (preprocessed) draws our quad unmoved: its one
++/// mention of `gl_Position` sets it to the composite matrix times `gl_Vertex`, which maps the
++/// quad onto the whole target. A second mention (a moved, scaled or jittered quad), or any
++/// other form, is not proven to cover the target: false.
++fn covers_target(code: &str) -> bool {
++    // `code` is preprocessed (comments removed). Use token boundaries: a helper
++    // named `avoidmain` must not be mistaken for the entry point.
++    let tokens: Vec<_> = crate::macros::lex(code)
++        .into_iter()
++        .filter(|token| !token.trim().is_empty())
++        .collect();
++    if tokens.contains(&"gl_ClipDistance")
++        || tokens.contains(&"gl_CullDistance")
++        || tokens.iter().copied().filter(|t| *t == "gl_Position").count() != 1
++        // A user-defined ftransform cannot stand in for the fixed quad transform.
++        || tokens.iter().copied().filter(|t| *t == "ftransform").count() > 1
++    {
++        return false;
++    }
++    let headers = [
++        &["void", "main", "(", ")", "{"][..],
++        &["void", "main", "(", "void", ")", "{"][..],
++    ];
++    let body = headers.iter().find_map(|header| {
++        tokens.windows(header.len()).position(|part| part == *header)
++            .map(|index| &tokens[index + header.len()..])
++    });
++    // The first statement executes before any branch, call or early return.
++    // The sole position mention also rules out subsequent writes or aliases.
++    body.is_some_and(|body| {
++        [
++            &["gl_Position", "=", "ftransform", "(", ")", ";"][..],
++            &["gl_Position", "=", "gl_ModelViewProjectionMatrix", "*", "gl_Vertex", ";"][..],
++            &["gl_Position", "=", "gl_ProjectionMatrix", "*", "gl_ModelViewMatrix", "*", "gl_Vertex", ";"][..],
++        ].iter().any(|form| body.starts_with(form))
++    })
+ }
+ 
+ /// `size.buffer.<buffer>`: a size of its own, relative to the render size (floats) or in
+@@ -1019,6 +1061,7 @@
+                 compute,
+                 geometry_triangles: 0,
+                 scale: FULL,
++                covers: false,
+             });
+         }
+         if !enabled(
+@@ -1108,6 +1151,9 @@
+             mipmaps,
+             compute,
+             geometry_triangles: 0,
++            covers: !matches!(group, Group::Gbuffers | Group::Translucent | Group::Shadow)
++                && covers_target(&vertex.code)
++                && !fragment.code.contains("gl_SampleMask"),
+         })
+     }
+ 
+@@ -1208,6 +1254,7 @@
+             mipmaps: 0,
+             compute: Vec::new(),
+             geometry_triangles: triangles,
++            covers: false,
+         })
+     }
+ 
+@@ -1386,6 +1433,43 @@
+     use super::*;
+ 
+     #[test]
++    fn composite_load_only_unmoved_quad_covers_target() {
++        assert!(covers_target("void main() {\n    gl_Position = ftransform();\n}\n"));
++        assert!(covers_target(
++            "void main() { gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex; }"
++        ));
++        assert!(!covers_target(
++            "void main() { gl_Position = ftransform(); gl_Position.xy *= 0.5; }"
++        ));
++        assert!(!covers_target(
++            "void main() { gl_Position = vec4(gl_Vertex.xy * 0.5, 0.0, 1.0); }"
++        ));
++        assert!(!covers_target("void main() { gl_Position = gl_Vertex; }"));
++    }
++
++    #[test]
++    fn composite_load_rejects_clip_and_cull_distances() {
++        for output in ["gl_ClipDistance", "gl_CullDistance"] {
++            assert!(!covers_target(&format!(
++                "void main() {{ gl_Position = ftransform(); {output}[0] = -1.0; }}"
++            )));
++        }
++    }
++
++    #[test]
++    fn composite_load_position_must_dominate_main_exits() {
++        for code in [
++            "void main(){if(gl_Vertex.x<0.0)return;gl_Position=ftransform();}",
++            "void main(){if(gl_Vertex.x<0.0){gl_Position=ftransform();}}",
++            "void avoidmain(){gl_Position=ftransform();}void main(){if(true)avoidmain();}",
++            "vec4 ftransform(){return vec4(0.0);}void main(){gl_Position=ftransform();}",
++        ] {
++            assert!(!covers_target(code), "{code}");
++        }
++        assert!(covers_target("void main(void){gl_Position=ftransform();if(gl_Vertex.x<0.0)return;}"));
++    }
++
++    #[test]
+     fn named_dimension_folder_reaches_the_program_loader() {
+         let pack = Pack::from_zip_bytes(
+             "original-dimension-control",

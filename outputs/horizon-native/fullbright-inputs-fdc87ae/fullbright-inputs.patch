@@ -1,0 +1,11 @@
+--- a/crates/horizon-client/src/game/shader_packs.rs	2026-11-10 20:07:27
++++ b/crates/horizon-client/src/game/shader_packs.rs	2026-11-10 20:07:27
+@@ -447,6 +447,8 @@
+             blindness: f32::from(u8::from(self.potions.effects.get("blindness").is_some())),
+             eye_light: [i32::from(light & 15), i32::from(light >> 4)],
+             hide_gui: self.ui.hide_gui,
++            // Set per frame by the renderer from Horizon Extras' fullbright (gfx.rs, post.run).
++            fullbright: false,
+             brightness: self.settings.gamma,
+             biome: info.map_or(-1, |b| {
+                 let names = world_biomes!(self).list.iter().map(|b| b.name.as_str());

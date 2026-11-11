@@ -1,0 +1,159 @@
+--- a/crates/horizon-client-render/src/gfx/pack_entities.rs
++++ b/crates/horizon-client-render/src/gfx/pack_entities.rs
+@@ -9,6 +9,7 @@
+ use horizon_shaders::render_stage;
+ 
+ use super::Vertex;
++use super::entity_batch::ENERGY_SWIRL_OVERLAY;
+ use super::pack_draw::EntitySpan;
+ 
+ /// `HzDraw`'s size (pack_draw.rs).
+@@ -381,32 +382,30 @@
+         let first = spans.first().map_or(entities.len(), |s| s.start as usize);
+         rest.extend_from_slice(&entities[..first.min(entities.len())]);
+         for (span, range) in runs(entities.len(), spans) {
+-            let run = &entities[range];
+-            let program = program_of(&span).filter(|&p| {
+-                plain(run) || (p == DESTROY && run.iter().all(|v| matches!(v.layer, 11 | 12)))
+-            });
+-            let pack = program.is_some_and(|p| drawn[p]) && !span.hidden;
+-            let casts = program.is_some_and(|p| shadow.cast(&span, p));
+-            if !pack && !span.hidden {
+-                rest.extend_from_slice(run);
++            for (run, program) in cpu_runs(&entities[range], program_of(&span)) {
++                let pack = program.is_some_and(|p| drawn[p]) && !span.hidden;
++                let casts = program.is_some_and(|p| shadow.cast(&span, p));
++                if !pack && !span.hidden {
++                    rest.extend_from_slice(run);
++                }
++                let Some(program) = program.filter(|_| pack || casts) else {
++                    continue;
++                };
++                let start = self.scratch.len() as u32;
++                self.scratch.extend_from_slice(run);
++                if program == DESTROY {
++                    project_cracks(&mut self.scratch[start as usize..], crack.0, crack.1);
++                }
++                self.push_draw(
++                    span,
++                    posed + start,
++                    run.len() as u32,
++                    program,
++                    pack,
++                    casts,
++                    run[0].layer & 0xffff,
++                );
+             }
+-            let Some(program) = program.filter(|_| (pack || casts) && !run.is_empty()) else {
+-                continue;
+-            };
+-            let start = self.scratch.len() as u32;
+-            self.scratch.extend_from_slice(run);
+-            if program == DESTROY {
+-                project_cracks(&mut self.scratch[start as usize..], crack.0, crack.1);
+-            }
+-            self.push_draw(
+-                span,
+-                posed + start,
+-                run.len() as u32,
+-                program,
+-                pack,
+-                casts,
+-                run[0].layer & 0xffff,
+-            );
+         }
+         if self.draws.is_empty() && posed == 0 {
+             return;
+@@ -498,10 +497,51 @@
+ /// Whether a run holds only geometry a gbuffers program can draw from the shared atlas: no
+ /// celestial body, cloud, beam, End portal, crack or energy swirl (overlay codes Horizon's entity
+ /// shader draws in its own way; entity.wgsl).
++fn plain_quad(v: &Vertex) -> bool {
++    !matches!(
++        v.layer & 0xffff,
++        2 | 4 | 6 | 9 | 10 | 11 | 12 | ENERGY_SWIRL_OVERLAY
++    )
++}
++
+ fn plain(run: &[Vertex]) -> bool {
+-    run.iter()
+-        .step_by(4)
+-        .all(|v| !matches!(v.layer & 0xffff, 2 | 4 | 6 | 9 | 10 | 11 | 12 | 34))
++    run.iter().step_by(4).all(plain_quad)
++}
++
++fn energy_swirl(v: &Vertex) -> bool {
++    v.layer & 0xffff == ENERGY_SWIRL_OVERLAY
++}
++
++/// Keep native energy swirl quads separate from the shader-pack body. Both
++/// destinations keep quad order. Other special materials retain the existing
++/// whole-span fallback, including when mixed with an energy swirl.
++fn cpu_runs(
++    run: &[Vertex],
++    program: Option<usize>,
++) -> impl Iterator<Item = (&[Vertex], Option<usize>)> {
++    let whole = program.filter(|&p| {
++        plain(run) || (p == DESTROY && run.iter().all(|v| matches!(v.layer, 11 | 12)))
++    });
++    let split = whole.is_none()
++        && matches!(program, Some(ENTITY | TRANSLUCENT))
++        && run.len().is_multiple_of(4)
++        && run.iter().step_by(4).all(|v| plain_quad(v) || energy_swirl(v));
++    let mut left = run;
++    std::iter::from_fn(move || {
++        if left.is_empty() {
++            return None;
++        }
++        if !split {
++            return Some((std::mem::take(&mut left), whole));
++        }
++        let swirl = energy_swirl(&left[0]);
++        let end = left.iter().step_by(4)
++            .position(|v| energy_swirl(v) != swirl)
++            .map_or(left.len(), |quad| quad * 4);
++        let (run, remaining) = left.split_at(end);
++        left = remaining;
++        Some((run, if swirl { None } else { program }))
++    })
+ }
+ 
+ /// The programs of entity runs, in the order they draw.
+@@ -553,6 +593,37 @@
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++
++    #[test]
++    fn only_the_energy_swirl_leaves_an_ordinary_entity_span() {
++        let quad = |layer, id| [Vertex {
++            layer,
++            pos: [id, 0.0, 0.0],
++            ..bytemuck::Zeroable::zeroed()
++        }; 4];
++        let body_a = quad(0, 1.0);
++        let body_b = quad(1, 2.0);
++        let swirl = quad(ENERGY_SWIRL_OVERLAY | (1 << 16), 3.0);
++        let body_c = quad(0, 4.0);
++        let vertices = [body_a, body_b, swirl, swirl, body_c].concat();
++        let routes = |run: &[Vertex], program| {
++            cpu_runs(run, program)
++                .map(|(r, route)| (r.len(), r[0].pos[0], route))
++                .collect::<Vec<_>>()
++        };
++        for program in [ENTITY, TRANSLUCENT] {
++            assert_eq!(
++                routes(&vertices, Some(program)),
++                [(8, 1.0, Some(program)), (8, 3.0, None), (4, 4.0, Some(program))]
++            );
++        }
++        assert_eq!(routes(&vertices, Some(BLOCK)), [(20, 1.0, None)]);
++        assert_eq!(routes(&vertices[..19], Some(ENTITY)), [(19, 1.0, None)]);
++        let mixed = [body_a, quad(2, 5.0), swirl].concat();
++        assert_eq!(routes(&mixed, Some(ENTITY)), [(12, 1.0, None)]);
++        let cracks = [quad(11, 1.0), quad(12, 2.0)].concat();
++        assert_eq!(routes(&cracks, Some(DESTROY)), [(8, 1.0, Some(DESTROY))]);
++    }
+ 
+     #[test]
+     fn destroy_stage_uses_the_pack_only_when_a_program_is_available() {

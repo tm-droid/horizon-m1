@@ -1,0 +1,24 @@
+--- a/crates/horizon-client/src/game/control.rs	2026-11-06 20:22:43
++++ b/crates/horizon-client/src/game/control.rs	2026-11-06 20:22:49
+@@ -145,6 +145,21 @@
+                     .collect(),
+             );
+         }
++        // The shader pack's passes, timed by the same switch (`set_pass_timing`): an Iris
++        // pack's programs (`deferred`, `composite1`...) or a native pack's stages.
++        let pack_passes = self
++            .renderer
++            .as_ref()
++            .map(|r| r.shader_pass_times())
++            .unwrap_or_default();
++        if !pack_passes.is_empty() {
++            summary["shader_passes"] = Value::Object(
++                pack_passes
++                    .into_iter()
++                    .map(|(name, ms)| (name, json!(ms)))
++                    .collect(),
++            );
++        }
+         summary
+     }
+     pub(super) fn poll_control(&mut self, event_loop: &dyn EventLoopCtl) {

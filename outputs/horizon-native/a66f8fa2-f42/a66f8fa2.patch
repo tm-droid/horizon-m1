@@ -1,0 +1,183 @@
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -7396,7 +7396,8 @@ impl Renderer {
+             });
+         }
+         // A shader pack's shadow pass draws the sections in its camera's box, all of them (the
+-        // occlusion graph follows the eye, not the light), within shadowDistanceRenderMul.
++        // occlusion graph follows the eye, not the light), within shadowDistanceRenderMul; for
++        // an Iris-format pack, only those whose shadow can fall into the camera's view.
+         let shadow_view = self
+             .pack_post
+             .as_ref()
+@@ -7534,8 +7535,11 @@ impl Renderer {
+             let radius = v
+                 .distance
+                 .map_or(radius, |d| radius.min((d / 16.0).ceil() as i32));
+-            let light = Frustum {
+-                planes: frustum(v.cull),
++            let light = ShadowCull {
++                light: Frustum {
++                    planes: frustum(v.cull),
++                },
++                casters: v.view_casters.then(|| shadow_casters(cull_proj, v.light)),
+             };
+             crate::spans::time("shadow visibility", || {
+                 // Within the unculled distance every section, then those in the light's box.
+@@ -11115,6 +11119,10 @@ pub struct Frusta(pub Frustum, pub Option<Frustum>);
+ pub trait Cull {
+     fn intersects(&self, min: Vec3, max: Vec3) -> bool;
+     fn contains(&self, min: Vec3, max: Vec3) -> bool;
++    /// Whether a section is tested by the box around its geometry, not its whole 16 blocks.
++    fn tight(&self) -> bool {
++        true
++    }
+ }
+ impl Cull for Frustum {
+     fn intersects(&self, min: Vec3, max: Vec3) -> bool {
+@@ -11133,6 +11141,31 @@ impl Cull for Frusta {
+         self.0.contains(min, max) || self.1.is_some_and(|f| f.contains(min, max))
+     }
+ }
++/// A shader pack's shadow camera's box, and with `casters` only what can shade the camera's view
++/// (`shadow_casters`): a box must meet all of them.
++#[derive(Clone, Copy, Debug)]
++pub struct ShadowCull {
++    pub light: Frustum,
++    pub casters: Option<[Frustum; 2]>,
++}
++impl Cull for ShadowCull {
++    fn intersects(&self, min: Vec3, max: Vec3) -> bool {
++        self.light.intersects(min, max)
++            && self
++                .casters
++                .is_none_or(|c| c.iter().all(|f| f.intersects(min, max)))
++    }
++    fn contains(&self, min: Vec3, max: Vec3) -> bool {
++        self.light.contains(min, max)
++            && self
++                .casters
++                .is_none_or(|c| c.iter().all(|f| f.contains(min, max)))
++    }
++    /// Our probe's Iris 1.11.7 maps fit testing the casters' whole sections (a guess that matched).
++    fn tight(&self) -> bool {
++        self.casters.is_none()
++    }
++}
+ /// Camera-relative clip planes (`Frustum`).
+ #[derive(Clone, Copy, Debug)]
+ pub struct Frustum {
+@@ -11291,6 +11324,68 @@ fn facing_runs_from(
+         None => sides.every(part, draw),
+     }
+ }
++/// The camera's view `view_proj` (wgpu depth, reversed or not) stretched without end toward
++/// `light` (a direction): the boxes whose shadow, cast away from the light, can fall into the
++/// view. Its planes are the view's faces turned toward the light, and through each edge between
++/// such a face and one turned away, the plane along the light; unused ones take in everything.
++fn shadow_casters(view_proj: Mat4, light: Vec3) -> [Frustum; 2] {
++    let faces = frustum(view_proj);
++    let toward = faces.map(|p| p.truncate().dot(light) >= 0.0);
++    let inverse = view_proj.inverse();
++    // Corner (x, y, z) of clip space's box; `frustum`'s faces at x -1 and 1 are 0 and 1, at
++    // y -1 and 1 are 2 and 3, at depth 0 and 1 are 4 and 5.
++    let corner = |c: [usize; 3]| {
++        inverse.project_point3(Vec3::new(
++            c[0] as f32 * 2.0 - 1.0,
++            c[1] as f32 * 2.0 - 1.0,
++            c[2] as f32,
++        ))
++    };
++    let corners: Vec<[usize; 3]> = (0..8).map(|i| [i & 1, (i >> 1) & 1, i >> 2]).collect();
++    let centre = corners.iter().map(|&c| corner(c)).sum::<Vec3>() / 8.0;
++    let mut planes = [Vec4::W; 12];
++    let mut n = 0;
++    for (k, &face) in faces.iter().enumerate() {
++        if toward[k] {
++            planes[n] = face;
++            n += 1;
++        }
++    }
++    for a in &corners {
++        for axis in 0..3 {
++            if a[axis] == 1 {
++                continue;
++            }
++            let mut b = *a;
++            b[axis] = 1;
++            // The edge from a to b lies on the faces of the two other axes.
++            let [f, g] = [(axis + 1) % 3, (axis + 2) % 3].map(|o| o * 2 + a[o]);
++            if toward[f] == toward[g] {
++                continue;
++            }
++            let (p, q) = (corner(*a), corner(b));
++            let normal = (q - p).cross(light);
++            if normal.length_squared() < 1e-12 {
++                continue;
++            }
++            let normal = normal.normalize();
++            let side = if normal.dot(centre - p) < 0.0 {
++                -1.0
++            } else {
++                1.0
++            };
++            // At most six such edges with at most four faces toward the light: 12 planes.
++            if let Some(plane) = planes.get_mut(n) {
++                *plane = (normal * side).extend(-normal.dot(p) * side);
++                n += 1;
++            }
++        }
++    }
++    let [a, b] = [0, 6].map(|i| Frustum {
++        planes: planes[i..i + 6].try_into().expect("six planes"),
++    });
++    [a, b]
++}
+ fn frustum(m: Mat4) -> [Vec4; 6] {
+     let r = |i| m.row(i);
+     let planes = [
+--- a/crates/horizon-client-render/src/gfx/resident.rs
++++ b/crates/horizon-client-render/src/gfx/resident.rs
+@@ -475,7 +475,8 @@ impl<T> Resident<T> {
+                     }
+                     let oy = f64::from(self.min_y + y * 16) - camera.y;
+                     let min = Vec3::new(min_x, oy as f32, min_z);
+-                    let (bmin, bmax) = section_box(min, self.bounds[slot as usize]);
++                    let bounds = self.bounds[slot as usize].filter(|_| frustum.tight());
++                    let (bmin, bmax) = section_box(min, bounds);
+                     if !frustum.intersects(bmin, bmax) {
+                         continue;
+                     }
+diff --git a/crates/horizon-client-render/src/gfx/native_post.rs b/crates/horizon-client-render/src/gfx/native_post.rs
+index 3db3222..98167da 100644
+--- a/crates/horizon-client-render/src/gfx/native_post.rs
++++ b/crates/horizon-client-render/src/gfx/native_post.rs
+@@ -366,6 +366,7 @@ impl NativeFrame {
+             // the sun's azimuth while the sun is low.
+             distance: None,
+             unculled: None,
++            view_casters: false,
+         })
+     }
+ 
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index 4ea4f4e..2a69e9e 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -981,6 +981,8 @@ pub(super) struct ShadowView {
+     /// Draw everything, every face, within this many blocks (`shadow.culling=false|reversed`):
+     /// packs that voxelize the world in their shadow pass need all of it.
+     pub unculled: Option<f32>,
++    /// Also cull to what can shade the camera's view (Iris-format packs only).
++    pub view_casters: bool,
+ }
+ 
+ /// Set 3 of flat terrain, read by the vertex stage: the sprite layers' table (`mc_Entity`'s id
+@@ -3485,6 +3487,7 @@ impl PackPost {
+                 horizon_shaders::ShadowCulling::Off => Some(f32::INFINITY),
+                 horizon_shaders::ShadowCulling::Reversed => Some(shadow.voxel_distance),
+             },
++            view_casters: true,
+         })
+     }
+ 

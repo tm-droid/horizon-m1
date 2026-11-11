@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "apply_in_menus": true,
+  "focused_fps": 0,
+  "hovered_fps": 30,
+  "unfocused_fps": 10,
+  "minimized_fps": 1,
+  "idle_fps": 20,
+  "idle_timeout_seconds": 60,
+  "unfocused_delay_ms": 500,
+  "battery_mode_fps": 30,
+  "reduce_volume": false,
+  "hovered_volume": 1.0,
+  "unfocused_volume": 0.25,
+  "minimized_volume": 0.0,
+  "idle_volume": 0.5
+}

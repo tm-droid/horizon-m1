@@ -1,0 +1,104 @@
+diff --git a/crates/horizon-client-render/src/gfx/pack_entities.rs b/crates/horizon-client-render/src/gfx/pack_entities.rs
+index 3e65af9..3d49cca 100644
+--- a/crates/horizon-client-render/src/gfx/pack_entities.rs
++++ b/crates/horizon-client-render/src/gfx/pack_entities.rs
+@@ -453,7 +453,8 @@ impl PackEntities {
+         }
+         let first = spans.first().map_or(entities.len(), |s| s.start as usize);
+         extend_without_portals(rest, &entities[..first.min(entities.len())]);
+-        let (mut other, mut portal_faces, mut beam_faces) = (Vec::new(), Vec::new(), Vec::new());
++        let (mut other, mut portal_faces, mut beam_faces, mut swirl_faces) =
++            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+         let mut without_fluids = Vec::new();
+         for (span, range) in runs(entities.len(), spans) {
+             let run_start = range.start as u32;
+@@ -483,18 +484,23 @@ impl PackEntities {
+             // gateway: its cube and its beam): each goes to its own program.
+             // Beacon beams come in a run of their own, at stage NONE (game.rs: no stage of 5.4
+             // is theirs), for gbuffers_beaconbeam.
+-            let split = (program_of(&span) == Some(BLOCK) || span.stage == render_stage("NONE"))
++            // A mob's energy swirl (charged creeper, powered wither) sits in the mob's own run: the
++            // body goes to the pack's entity program, the swirl to Horizon's additive draw.
++            let split = ((program_of(&span) == Some(BLOCK) || span.stage == render_stage("NONE"))
+                 && whole
+                     .chunks(4)
+-                    .any(|q| matches!(q[0].layer & 0xffff, 6 | 9 | 10));
+-            let parts: [(&[Vertex], Part); 3] = if split {
++                    .any(|q| matches!(q[0].layer & 0xffff, 6 | 9 | 10)))
++                || has_swirl(whole);
++            let parts: [(&[Vertex], Part); 4] = if split {
+                 other.clear();
+                 portal_faces.clear();
+                 beam_faces.clear();
++                swirl_faces.clear();
+                 for quad in whole.chunks(4) {
+                     match quad[0].layer & 0xffff {
+                         9 | 10 => portal_faces.extend_from_slice(quad),
+                         6 => beam_faces.extend_from_slice(quad),
++                        super::ENERGY_SWIRL_OVERLAY => swirl_faces.extend_from_slice(quad),
+                         _ => other.extend_from_slice(quad),
+                     }
+                 }
+@@ -502,9 +508,15 @@ impl PackEntities {
+                     (&other, Part::Plain),
+                     (&portal_faces, Part::Portal),
+                     (&beam_faces, Part::Beam),
++                    (&swirl_faces, Part::Swirl),
+                 ]
+             } else {
+-                [(whole, Part::Plain), (&[], Part::Plain), (&[], Part::Plain)]
++                [
++                    (whole, Part::Plain),
++                    (&[], Part::Plain),
++                    (&[], Part::Plain),
++                    (&[], Part::Plain),
++                ]
+             };
+             for (run, part) in parts {
+                 if run.is_empty() {
+@@ -513,6 +525,7 @@ impl PackEntities {
+                 let program = match part {
+                     Part::Portal => Some(BLOCK),
+                     Part::Beam => Some(BEAM),
++                    Part::Swirl => None,
+                     Part::Plain => program_of(&span).filter(|&p| {
+                         plain(run)
+                             || (p == DESTROY && run.iter().all(|v| matches!(v.layer, 11 | 12)))
+@@ -684,6 +697,14 @@ enum Part {
+     Plain,
+     Portal,
+     Beam,
++    /// Energy swirl quads: Horizon's own additive draw (`rest`).
++    Swirl,
++}
++
++/// Whether a run holds energy swirl quads (`plain` keeps those out of a pack's program).
++fn has_swirl(run: &[Vertex]) -> bool {
++    run.chunks(4)
++        .any(|q| q[0].layer & 0xffff == super::ENERGY_SWIRL_OVERLAY)
+ }
+ 
+ /// Beam faces (`block_entity_render::beam`: layer 6, v counting the sprite's repeats up the
+@@ -1084,6 +1105,22 @@ mod portal_beam_tests {
+         );
+     }
+ 
++    #[test]
++    fn a_swirl_quad_marks_a_run_for_splitting_and_keeps_the_body_plain() {
++        let mut run = Vec::new();
++        for layer in [0, 0, super::super::ENERGY_SWIRL_OVERLAY] {
++            run.extend(quad(layer, 0, [([0.0; 3], [0.0; 2]); 4]));
++        }
++        assert!(has_swirl(&run) && !plain(&run));
++        let body: Vec<Vertex> = run
++            .chunks(4)
++            .filter(|q| q[0].layer != super::super::ENERGY_SWIRL_OVERLAY)
++            .flatten()
++            .copied()
++            .collect();
++        assert!(!has_swirl(&body) && plain(&body));
++    }
++
+     #[test]
+     fn horizon_keeps_no_portal_or_beam_face_under_a_pack() {
+         let mut run = Vec::new();

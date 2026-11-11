@@ -1,0 +1,123 @@
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index 8674850ee2..d81a043cbd 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -2911,10 +2911,12 @@ impl PackPost {
+         });
+         let clouds_off = post.clouds_off;
+         let hides_clouds = clouds_off || post.clouds.is_some() && cloud_geometry.is_some();
++        // Rain and snow test depth but never write it: Iris 1.11.7 left none of either in
++        // `depthtex0`, whatever `rain.depth` said (probe packs of ours, #10492).
+         let weather_geometry = world.weather.then(|| Geometry {
+             buffers: &entity_buffers,
+             table: None,
+-            depth_write: post.rain_depth,
++            depth_write: false,
+             atlas: None,
+             material_maps: false,
+             ids: None,
+diff --git a/crates/horizon-client-render/src/gfx/pack_post/weather_depth_tests.rs b/crates/horizon-client-render/src/gfx/pack_post/weather_depth_tests.rs
+index 61a1355ebb..277d0271c4 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post/weather_depth_tests.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post/weather_depth_tests.rs
+@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
+ 
+ #[test]
+ #[ignore = "requires a host GPU; missing adapter is a failure"]
+-fn rain_depth_controls_writes_for_rain_snow_and_fallbacks() {
++fn rain_and_snow_leave_depth_alone_whatever_rain_depth_says() {
+     let instance = crate::gfx::test_gpu::instance();
+     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+     eprintln!("Weather depth GPU: {:?}", adapter.get_info());
+@@ -16,14 +16,10 @@ fn rain_depth_controls_writes_for_rain_snow_and_fallbacks() {
+     }))
+     .unwrap();
+     let mut depth_failures = Vec::new();
++    // Iris 1.11.7 left no rain or snow in `depthtex0` with `rain.depth` absent, true or false,
++    // drawn by `gbuffers_weather` or its fallback (probe packs of ours, #10492).
+     for program in ["gbuffers_weather", "gbuffers_textured_lit"] {
+-        for (property, writes) in [
+-            ("rain.depth=true", true),
+-            ("rain.depth=false", false),
+-            // An evidence-limited compatibility choice: preserve accepted main here.
+-            // The permitted packs do not establish the external omitted-value default.
+-            ("", true),
+-        ] {
++        for property in ["rain.depth=true", "rain.depth=false", ""] {
+             let mut post = pack(&device, &queue, &adapter, program, property);
+             // Retain the pipelines for another frame, then resize their targets.
+             for size in [[6, 1], [6, 1], [12, 2]] {
+@@ -90,7 +86,7 @@ fn rain_depth_controls_writes_for_rain_snow_and_fallbacks() {
+                         }
+                         let depth =
+                             f32::from_le_bytes(depths[offset..offset + 4].try_into().unwrap());
+-                        let expected_depth = if visible && writes { 0.25 } else { 0.5 };
++                        let expected_depth = 0.5;
+                         if depth != expected_depth {
+                             depth_failures.push(format!(
+                                 "{program} {property:?} size={size:?} ({x},{y}): depth={depth}, expected={expected_depth}"
+diff --git a/crates/horizon-shaders/src/post.rs b/crates/horizon-shaders/src/post.rs
+index 10a3d1b2f3..b15ba34914 100644
+--- a/crates/horizon-shaders/src/post.rs
++++ b/crates/horizon-shaders/src/post.rs
+@@ -491,11 +491,9 @@ pub struct Post {
+     pub clouds: Option<PostProgram>,
+     /// What draws lines (the block outline), with the pack's own transform and look.
+     pub lines: Option<PostProgram>,
+-    /// What draws rain and snow, after deferred.
++    /// What draws rain and snow, after deferred. They never write depth, whatever `rain.depth`
++    /// says: Iris 1.11.7 left none of either in `depthtex0` (probe packs of ours, #10492).
+     pub weather: Option<PostProgram>,
+-    /// `rain.depth`: whether rain and snow write depth. Without an explicit false, retain
+-    /// Horizon's existing writes; the inspected packs do not establish the external default.
+-    pub rain_depth: bool,
+     /// What draws the first-person hand and held items.
+     pub hand: Option<PostProgram>,
+     /// What draws their translucent parts (stained glass, ice...), after deferred and blended.
+@@ -700,9 +698,6 @@ pub fn load_post(
+         clouds: None,
+         lines: None,
+         weather: None,
+-        rain_depth: properties
+-            .get("rain.depth")
+-            .is_none_or(|v| v.trim() != "false"),
+         hand: None,
+         hand_water: None,
+         clouds_off: false,
+@@ -2844,8 +2839,10 @@ blend.composite1.colortex3 = ONE ONE ONE ONE
+         assert!(off.clouds.is_none() && off.clouds_off);
+     }
+ 
++    /// Without `gbuffers_weather` or the textured programs, rain and snow draw with
++    /// `gbuffers_basic`, blended, whatever `rain.depth` says.
+     #[test]
+-    fn rain_depth_follows_live_properties_independently_of_weather_fallback() {
++    fn weather_falls_back_to_basic_whatever_rain_depth_says() {
+         let pack = Pack::from_zip_bytes(
+             "original-weather-depth",
+             crate::pack::tests::zip(&[
+@@ -2865,23 +2862,9 @@ blend.composite1.colortex3 = ONE ONE ONE ONE
+             weather: Some(GbuffersInputs::default()),
+             ..Default::default()
+         };
+-        for (text, writes) in [
+-            ("rain.depth = true", true),
+-            ("rain.depth = false", false),
+-            (
+-                "#if 0\nrain.depth=true\n#else\nrain.depth = false\n#endif",
+-                false,
+-            ),
+-            ("rain.depth=true\nrain.depth=false", false),
+-            ("rain.depth=false\nrain.depth=true", true),
+-            // These defaults preserve accepted main as a compatibility choice, not a claim
+-            // about the external default contract, which the permitted packs don't establish.
+-            ("", true),
+-            ("rain.depth=invalid", true),
+-        ] {
++        for text in ["", "rain.depth = true", "rain.depth = false"] {
+             let properties = Properties::parse(text, &macros);
+             let post = load_post(&pack, "", &properties, &macros, &inputs);
+-            assert_eq!(post.rain_depth, writes, "{text:?}");
+             let weather = post.weather.expect("weather fallback loads");
+             assert_eq!(weather.name, "gbuffers_basic");
+             assert_eq!(weather.group, Group::Translucent);

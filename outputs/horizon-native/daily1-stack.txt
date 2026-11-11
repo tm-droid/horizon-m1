@@ -1,0 +1,18 @@
+# Nightly fdc87ae, application order (ported from r5 / 66f3981 stack).
+cloud-prep
+shadow-scratch
+jobpool-qos
+emissive-bsearch
+pass-merge
+shadow-dedup
+particle-cull
+adaptive-upload
+pbr-cpu-drop
+anim-frame-compact
+arena-thresholds
+audio-cache
+composite-overwrite
+# drop-symlink step is done by the build script (CLAUDE.md symlink breaks mixins staging)
+cem-binding
+is-gliding
+charged-creeper

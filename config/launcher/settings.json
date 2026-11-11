@@ -1,0 +1,16 @@
+{
+  "selected": "native-fdc87ae-m1-daily7-73decc0fdc30",
+  "minecraft_dir": null,
+  "server_dir": null,
+  "install_new_versions": false,
+  "skip_opening": false,
+  "appearance": "dark",
+  "ping_notice_seen": true,
+  "owner_notice_seen": true,
+  "partner_seen_secs": 180,
+  "partner_hidden": false,
+  "while_playing": "stay",
+  "accent": "violet",
+  "dev_offline": true,
+  "prune_old_versions": false
+}

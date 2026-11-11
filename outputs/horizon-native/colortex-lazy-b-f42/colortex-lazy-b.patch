@@ -1,0 +1,170 @@
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index a9d0d0d..3b9fc72 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -625,6 +625,8 @@ pub struct PackPost {
+     formats: [wgpu::TextureFormat; BUFFERS],
+     clears: [Option<[f32; 4]>; BUFFERS],
+     used: u16,
++    /// Buffers some pass draws into the "alt" side of or flips; the others' B is their A.
++    doubled: u16,
+     /// `size.buffer.*`.
+     sizes: [Option<horizon_shaders::BufferSize>; BUFFERS],
+     /// Buffers bound as images, and those also copied for a pass that samples them.
+@@ -1855,6 +1857,9 @@ impl PackPost {
+         let mask =
+             |flips: &[(u32, bool)]| flips.iter().filter(|f| f.1).fold(0u16, |m, f| m | 1 << f.0);
+         let mut used = 1u16;
++        // Buffers some pass draws into the "alt" side of, or flips: only these get a B texture.
++        let mut doubled = mask(&post.deferred_pre) | mask(&post.composite_pre);
++        let mut shadow_doubled = 0u16;
+         let draws = DrawUniforms::new(device);
+         // The shadow buffers' formats when the shadow pass runs; their programs see them as
+         // buffers 0 and 1.
+@@ -2001,11 +2006,29 @@ impl PackPost {
+                 ));
+                 return None;
+             }
++            // Composite-style programs draw into the "alt" side of what they write; gbuffers,
++            // shadow and `final` programs write in place, compute programs through images.
++            let alt = if geometry.is_none()
++                && group != Group::Final
++                && matches!(pass.pipeline, Pipeline::Render(_))
++            {
++                pass.written
++            } else {
++                0
++            };
++            if in_shadow {
++                shadow_doubled |= alt;
++            } else {
++                doubled |= alt;
++            }
+             for p in std::iter::once(&pass).chain(&pass.compute) {
+                 let (stage, flipped) = pack.released.get();
+                 pack.released.set((stage, flipped | p.flip));
+-                if !in_shadow {
++                if in_shadow {
++                    shadow_doubled |= p.flip;
++                } else {
+                     used |= p.reads | p.written | p.flip;
++                    doubled |= p.flip;
+                 }
+                 storage |= image_buffers(&p.images);
+                 image_copied |= p.image_copies;
+@@ -2305,17 +2328,28 @@ impl PackPost {
+             let depth1 = every_pass()
+                 .flat_map(|p| &p.samplers)
+                 .any(|s| matches!(s.source, Source::ShadowDepth(1, _)));
+-            let t =
+-                super::pack_shadow::ShadowTargets::new(device, &shadow_config, f, colors, depth1);
++            let t = super::pack_shadow::ShadowTargets::new(
++                device,
++                &shadow_config,
++                f,
++                colors,
++                shadow_doubled & colors,
++                depth1,
++            );
+             notes.push(format!(
+-                "shadow map {0}x{0} over {2} blocks, sunPathRotation {3}, shadowcolor buffers {colors:#b}{1}",
++                "shadow map {0}x{0} over {2} blocks, sunPathRotation {3}, shadowcolor buffers {colors:#b} (two textures: {4:#b}){1}",
+                 t.size,
+                 if depth1 { ", shadowtex1" } else { "" },
+                 shadow_config.distance,
+                 shadow_config.sun_path_rotation,
++                shadow_doubled & colors,
+             ));
+             t
+         });
++        log::info!(
++            "shader pack: colortex buffers {used:#b}, with two textures {:#b}",
++            doubled & used
++        );
+         // Any program can leave pixels untouched. Composite-style passes also write the
+         // alternate image, so their first write does not replace the main image's clear.
+         let mut cleared = Vec::new();
+@@ -2504,6 +2538,7 @@ impl PackPost {
+             formats,
+             clears,
+             used,
++            doubled: doubled & used,
+             storage,
+             copied,
+             sizes,
+@@ -3711,8 +3746,16 @@ impl PackPost {
+                 if self.copied & 1 << i != 0 {
+                     attachment |= wgpu::TextureUsages::COPY_SRC;
+                 }
+-                let sides = [0, 1]
+-                    .map(|_| texture_sized(&label, self.formats[i], attachment, levels, sizes[i]));
++                let side = || texture_sized(&label, self.formats[i], attachment, levels, sizes[i]);
++                let a = side();
++                let sides = [
++                    a.clone(),
++                    if self.doubled & 1 << i != 0 {
++                        side()
++                    } else {
++                        a
++                    },
++                ];
+                 if mipped && let Some((_, layout)) = self.down.get(&self.formats[i]) {
+                     mips[i] = Some(sides.each_ref().map(|t| {
+                         Mips {
+diff --git a/crates/horizon-client-render/src/gfx/pack_shadow.rs b/crates/horizon-client-render/src/gfx/pack_shadow.rs
+index 92f0aed..f201b89 100644
+--- a/crates/horizon-client-render/src/gfx/pack_shadow.rs
++++ b/crates/horizon-client-render/src/gfx/pack_shadow.rs
+@@ -33,7 +33,8 @@ pub(super) struct ShadowTargets {
+     pub depth: (wgpu::Texture, wgpu::TextureView),
+     /// `shadowtex1`: a copy of `shadowtex0` taken before translucent terrain, when read.
+     pub depth1: Option<(wgpu::Texture, wgpu::TextureView)>,
+-    /// Both sides of each shadowcolor buffer used.
++    /// Both sides of each shadowcolor buffer used; one texture for both when no `shadowcomp`
++    /// program draws into or flips the buffer.
+     pub color: [Option<[wgpu::TextureView; 2]>; 2],
+     /// The clear colour of each buffer cleared every frame.
+     pub clears: [Option<[f32; 4]>; 2],
+@@ -75,12 +76,14 @@ fn target(
+ 
+ impl ShadowTargets {
+     /// The buffers of `shadow` the pack uses: `colors` (bit n: shadowcolor n), `depth1` when
+-    /// some program reads `shadowtex1`. The resolution is kept within the device's limit.
++    /// some program reads `shadowtex1`, `doubled` (bit n: shadowcolor n needs a B texture). The
++    /// resolution is kept within the device's limit.
+     pub fn new(
+         device: &wgpu::Device,
+         shadow: &horizon_shaders::Shadow,
+         formats: [wgpu::TextureFormat; 2],
+         colors: u16,
++        doubled: u16,
+         depth1: bool,
+     ) -> Self {
+         let size = shadow
+@@ -90,8 +93,8 @@ impl ShadowTargets {
+         let depth = wgpu::TextureFormat::Depth32Float;
+         let color = std::array::from_fn(|n| {
+             (colors & 1 << n != 0).then(|| {
+-                [0, 1].map(|side| {
+-                    let label = format!("Shader pack shadowcolor{n} {}", ["A", "B"][side]);
++                let side = |side: &str| {
++                    let label = format!("Shader pack shadowcolor{n} {side}");
+                     target(
+                         device,
+                         &label,
+@@ -100,7 +103,14 @@ impl ShadowTargets {
+                         wgpu::TextureUsages::empty(),
+                     )
+                     .1
+-                })
++                };
++                let a = side("A");
++                let b = if doubled & 1 << n != 0 {
++                    side("B")
++                } else {
++                    a.clone()
++                };
++                [a, b]
+             })
+         });
+         Self {

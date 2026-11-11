@@ -1,0 +1,211 @@
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -616,6 +616,7 @@
+     pub timing: Option<super::pack_timing::PassTiming>,
+     /// `depthtex0` at the screen's centre, read back for `centerDepthSmooth`.
+     center_depth: Option<super::pack_center_depth::CenterDepth>,
++    center_depth_required: bool,
+     /// `shaders.properties`' custom uniforms, after the frame's in `uniforms.values`.
+     custom: horizon_shaders::Custom,
+     atlas: Option<wgpu::TextureView>,
+@@ -1818,6 +1819,12 @@
+         screen: wgpu::TextureFormat,
+         world: World<'_>,
+     ) -> Self {
++        let center_depth_demand = post.uses_uniform("centerDepthSmooth");
++        let center_depth_forced = std::env::var("HORIZON_FORCE_CENTER_DEPTH").as_deref() == Ok("1");
++        let center_depth_required = center_depth_demand || center_depth_forced;
++        log::info!(
++            "shader pack center depth readback: enabled={center_depth_required} demand={center_depth_demand} forced={center_depth_forced}"
++        );
+         // What the pack's shaders need of its storage buffers, before its parts move out.
+         let minimums = post.buffer_minimums();
+         let features = device.features();
+@@ -2496,6 +2503,7 @@
+             gui_size: world.gui_size,
+             timing: None,
+             center_depth: None,
++            center_depth_required,
+             custom,
+             atlas: world.atlas.as_ref().map(|a| a.0.clone()),
+             lightmap: world.lightmap,
+@@ -4070,10 +4078,13 @@
+         if let Some(t) = &mut self.timing {
+             t.begin(device, queue);
+         }
+-        self.uniforms.center_depth_raw = self
+-            .center_depth
+-            .get_or_insert_with(|| super::pack_center_depth::CenterDepth::new(device))
+-            .collect(device);
++        self.uniforms.center_depth_raw = if self.center_depth_required {
++            self.center_depth
++                .get_or_insert_with(|| super::pack_center_depth::CenterDepth::new(device))
++                .collect(device)
++        } else {
++            None
++        };
+         self.uniforms.update(frame, inputs, size);
+         // Until the camera's biome is known, `smooth` waits for the world's values.
+         if !inputs.biome_known {
+--- a/crates/horizon-shaders/src/custom.rs
++++ b/crates/horizon-shaders/src/custom.rs
+@@ -151,6 +151,22 @@
+             .iter()
+             .filter(|i| i.uniform)
+             .map(|i| (i.name.as_str(), i.ty.as_str()))
++    }
++
++    /// Whether any expression reads `name`, including variables and inactive branches.
++    /// Every item is evaluated each frame; conservatively keep dependencies even when a
++    /// later variable shadows the name or a branch would not currently execute.
++    pub fn references(&self, name: &str) -> bool {
++        fn reads(expr: &Expr, name: &str) -> bool {
++            match expr {
++                Expr::Num(_) => false,
++                Expr::Name(n, _) => n == name,
++                Expr::Call(_, args, _) => args.iter().any(|e| reads(e, name)),
++                Expr::Neg(e) | Expr::Not(e) => reads(e, name),
++                Expr::Bin(_, left, right) => reads(left, name) || reads(right, name),
++            }
++        }
++        self.items.iter().any(|item| reads(&item.expr, name))
+     }
+ 
+     /// Evaluates everything for a frame `dt` seconds after the last; `builtin` gives the
+@@ -570,6 +586,42 @@
+     }
+ 
+     #[test]
++    fn center_depth_references_walk_every_expression_shape() {
++        for expression in [
++            "centerDepthSmooth",
++            "-centerDepthSmooth",
++            "!centerDepthSmooth",
++            "1 + centerDepthSmooth * 2",
++            "if(false, 0, smooth(abs(centerDepthSmooth), 1))",
++            "centerDepthSmooth.x",
++        ] {
++            let parsed = custom(&format!("uniform.float.test = {expression}\n"));
++            assert!(parsed.notes.is_empty(), "{expression}: {:?}", parsed.notes);
++            assert!(parsed.references("centerDepthSmooth"), "{expression}");
++        }
++        let parsed = custom(
++            "variable.float.depth = centerDepthSmooth\n\
++             variable.float.next = depth\n\
++             uniform.float.focus = next\n",
++        );
++        assert!(parsed.references("centerDepthSmooth"));
++        assert!(parsed.references("depth"));
++        assert!(!parsed.references("centerDepth"));
++    }
++
++    #[test]
++    fn center_depth_references_do_not_match_names_or_function_names_partially() {
++        let parsed = custom(
++            "variable.float.centerDepthSmooth = 1\n\
++             uniform.float.test = centerDepthSmoothOther + sin(0)\n",
++        );
++        assert!(parsed.notes.is_empty(), "{:?}", parsed.notes);
++        assert!(!parsed.references("centerDepthSmooth"));
++        assert!(!parsed.references("sin"));
++        assert!(!Custom::default().references("centerDepthSmooth"));
++    }
++
++    #[test]
+     fn one_trailing_terminator_preserves_variable_and_uniform_values() {
+         for text in [
+             "variable.float.base = 0.25;\nuniform.float.answer = base * 2;\n",
+--- a/crates/horizon-shaders/src/post.rs
++++ b/crates/horizon-shaders/src/post.rs
+@@ -475,6 +475,19 @@
+             .iter()
+             .chain(draws.into_iter().flatten())
+             .chain(&self.shadow_comp)
++    }
++
++    /// Whether a loaded graphics/compute stage or custom expression needs a uniform.
++    /// Include lines explicitly: `every_program` predates that geometry path.
++    pub fn uses_uniform(&self, name: &str) -> bool {
++        self.custom.references(name)
++            || self.every_program().chain(self.lines.iter()).any(|p| {
++                p.program.as_ref().is_some_and(|program| {
++                    program.interface.uniforms.iter().any(|u| u.name == name)
++                }) || p.compute.iter().any(|(_, program)| {
++                    program.interface.uniforms.iter().any(|u| u.name == name)
++                })
++            })
+     }
+ 
+     /// The fewest bytes each storage buffer (`bufferObject.<n>`, set 4) needs for every stage
+@@ -1385,6 +1398,71 @@
+ mod tests {
+     use super::*;
+ 
++    fn center_depth_post(files: &[(&str, &str)], properties: &str) -> Post {
++        let pack = Pack::from_zip_bytes("center-depth-test", crate::pack::tests::zip(files)).unwrap();
++        let macros = Macros::standard();
++        let properties = Properties::parse(properties, &macros);
++        let post = load_post(&pack, "", &properties, &macros, &GameInputs::default());
++        assert!(post.notes.is_empty(), "{:?}", post.notes);
++        post
++    }
++
++    #[test]
++    fn center_depth_demand_uses_loaded_vertex_and_fragment_interfaces() {
++        let plain_vertex = "#version 120\nvoid main() { gl_Position = gl_Vertex; }";
++        let depth_vertex = "#version 120\nuniform float centerDepthSmooth;\nvoid main() { gl_Position = gl_Vertex + vec4(centerDepthSmooth); }";
++        let plain_fragment = "#version 120\nvoid main() { gl_FragColor = vec4(1.0); }";
++        let depth_fragment = "#version 120\nuniform float centerDepthSmooth;\nvoid main() { gl_FragColor = vec4(centerDepthSmooth); }";
++        for (vertex, fragment, expected) in [
++            (plain_vertex, plain_fragment, false),
++            (depth_vertex, plain_fragment, true),
++            (plain_vertex, depth_fragment, true),
++        ] {
++            let post = center_depth_post(
++                &[("shaders/final.vsh", vertex), ("shaders/final.fsh", fragment)],
++                "",
++            );
++            assert_eq!(post.programs.len(), 1);
++            assert_eq!(post.uses_uniform("centerDepthSmooth"), expected);
++        }
++    }
++
++    #[test]
++    fn center_depth_demand_includes_lines_and_compute_only_programs() {
++        let mut post = center_depth_post(
++            &[
++                ("shaders/final.vsh", "#version 120\nvoid main() { gl_Position = gl_Vertex; }"),
++                ("shaders/final.fsh", "#version 120\nuniform float centerDepthSmooth;\nvoid main() { gl_FragColor = vec4(centerDepthSmooth); }"),
++            ],
++            "",
++        );
++        post.lines = post.programs.pop();
++        assert!(post.programs.is_empty() && post.lines.is_some());
++        assert!(post.uses_uniform("centerDepthSmooth"));
++
++        let post = center_depth_post(
++            &[("shaders/composite.csh", "#version 430\nlayout(local_size_x = 1) in;\nuniform float centerDepthSmooth;\nlayout(std430, binding = 0) buffer Values { float value; } values;\nvoid main() { values.value = centerDepthSmooth; }")],
++            "bufferObject.0 = 4\n",
++        );
++        assert_eq!(post.programs.len(), 1);
++        assert!(post.programs[0].program.is_none());
++        assert_eq!(post.programs[0].compute.len(), 1);
++        assert!(post.uses_uniform("centerDepthSmooth"));
++    }
++
++    #[test]
++    fn center_depth_demand_is_recomputed_for_each_loaded_post() {
++        let plain = center_depth_post(&[], "");
++        assert!(!plain.uses_uniform("centerDepthSmooth"));
++        let custom = center_depth_post(
++            &[],
++            "variable.float.depth = centerDepthSmooth\nuniform.float.focus = if(false, 0, depth)\n",
++        );
++        assert!(custom.uses_uniform("centerDepthSmooth"));
++        let reloaded = center_depth_post(&[], "uniform.float.focus = 1\n");
++        assert!(!reloaded.uses_uniform("centerDepthSmooth"));
++    }
++
+     #[test]
+     fn named_dimension_folder_reaches_the_program_loader() {
+         let pack = Pack::from_zip_bytes(

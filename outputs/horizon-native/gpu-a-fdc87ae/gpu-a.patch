@@ -1,0 +1,304 @@
+From 45febea29dac6b653d8ca10175afffb0c506fbc9 Mon Sep 17 00:00:00 2001
+From: x <x@x>
+Date: Tue, 10 Nov 2026 20:32:16 +0800
+Subject: [PATCH] pack: draw terrain in the sky's render pass and clouds in the
+ outline's when they merge
+
+---
+ .../src/gfx/pack_post.rs                      | 136 ++++++++++++++----
+ 1 file changed, 107 insertions(+), 29 deletions(-)
+
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index d81a043cbd..6bb3386fbc 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -504,6 +504,46 @@ fn run_lengths(shapes: &[RunShape<'_>]) -> Vec<usize> {
+     lengths
+ }
+ 
++/// A gbuffers stage's render pass left open for the next stage to draw in, when every program
++/// drawn in it `merges`: one pass boundary fewer (a store and load of every attachment on a
++/// tile GPU). Dropping it ends the pass, which must happen before the encoder records anything.
++struct Carry {
++    rp: wgpu::RenderPass<'static>,
++    writes: Vec<(u32, usize)>,
++    /// Buffers the programs drawn in it sample.
++    reads: u16,
++    /// Buffers they write.
++    written: u16,
++}
++
++impl Carry {
++    /// Whether `pass` can draw in this render pass, as `run_lengths` joins programs: binding it
++    /// records nothing on the encoder, it writes exactly the same attachments, and neither side
++    /// samples a buffer the other writes.
++    fn takes(&self, pass: &Pass) -> bool {
++        pass.merges()
++            && pass.writes == self.writes
++            && pass.reads & self.written == 0
++            && pass.written & self.reads == 0
++    }
++
++    /// `rp`, still open after `pass` drew in it (with `reads` and `written` of the programs
++    /// before it), or `None` when `pass` doesn't merge: the pass then ends here.
++    fn after(
++        rp: wgpu::RenderPass<'static>,
++        pass: &Pass,
++        reads: u16,
++        written: u16,
++    ) -> Option<Self> {
++        pass.merges().then(|| Carry {
++            rp,
++            writes: pass.writes.clone(),
++            reads: reads | pass.reads,
++            written: written | pass.written,
++        })
++    }
++}
++
+ impl Pass {
+     /// Binding this program records nothing on the encoder and its draws need no barrier from
+     /// a neighbour's: no copies, image copies, snapshots, stand-in or storage images, storage
+@@ -3921,7 +3961,9 @@ impl PackPost {
+ 
+     /// Terrain (or, `translucent`, translucent terrain) with the pack's program; `draw` issues
+     /// the game's draws. Solid terrain in two parts has its cutout part drawn second, from the
+-    /// same draws.
++    /// same draws. `carry` is the sky's pass, which terrain draws in when it can (`Carry`); the
++    /// pass ends here either way.
++    #[allow(clippy::too_many_arguments)]
+     fn draw_terrain(
+         &mut self,
+         device: &wgpu::Device,
+@@ -3930,10 +3972,14 @@ impl PackPost {
+         size: [u32; 2],
+         list: TerrainList,
+         draw: &mut TerrainDraw<'_>,
++        carry: Option<Carry>,
+     ) {
+-        self.draw_terrain_part(device, queue, encoder, size, list, false, draw);
++        let carry =
++            self.draw_terrain_part(device, queue, encoder, size, list, false, draw, carry);
+         if list == TerrainList::Solid {
+-            self.draw_terrain_part(device, queue, encoder, size, list, true, draw);
++            drop(self.draw_terrain_part(
++                device, queue, encoder, size, list, true, draw, carry,
++            ));
+         }
+     }
+ 
+@@ -3958,14 +4004,20 @@ impl PackPost {
+         list: TerrainList,
+         cutout: bool,
+         draw: &mut TerrainDraw<'_>,
+-    ) {
++        carry: Option<Carry>,
++    ) -> Option<Carry> {
+         let Some(mut pass) = self.terrain_slot(list, cutout).take() else {
+-            return;
++            return carry;
+         };
++        // A pass this one can't draw in ends before `bind`, which may record copies.
++        let carry = carry.filter(|c| c.takes(&pass));
+         let translucent = list.translucent();
+         let group = self.bind(device, queue, encoder, &mut pass, size);
++        let (mut rp, reads, written) = match carry {
++            Some(c) => (c.rp, c.reads, c.written),
++            None => (self.begin(encoder, &pass).forget_lifetime(), 0, 0),
++        };
+         {
+-            let mut rp = self.begin(encoder, &pass);
+             rp.set_pipeline(pass.render());
+             rp.set_bind_group(0, &group, &[]);
+             if pass.buffers
+@@ -3997,11 +4049,14 @@ impl PackPost {
+         if !pass.group.shadow() {
+             self.mips_valid &= !pass.written;
+         }
++        let carry = Carry::after(rp, &pass, reads, written);
+         *self.terrain_slot(list, cutout) = Some(pass);
++        carry
+     }
+ 
+     /// The sky's parts in vanilla's order, each with the program that draws it; one render pass
+-    /// while consecutive programs write the same buffers.
++    /// while consecutive programs write the same buffers. That pass is left open for terrain
++    /// when every program drawn in it merges (`Carry`).
+     fn draw_sky(
+         &mut self,
+         device: &wgpu::Device,
+@@ -4009,10 +4064,8 @@ impl PackPost {
+         encoder: &mut wgpu::CommandEncoder,
+         size: [u32; 2],
+         frame: &super::Frame,
+-    ) {
+-        let Some(mut sky) = self.sky.take() else {
+-            return;
+-        };
++    ) -> Option<Carry> {
++        let mut sky = self.sky.take()?;
+         let parts = sky
+             .geometry
+             .prepare(queue, frame, self.uniforms.shadow.sun_path_rotation);
+@@ -4025,6 +4078,8 @@ impl PackPost {
+         }
+         let passes = [&sky.basic, &sky.textured];
+         let mut open: Option<(wgpu::RenderPass<'_>, usize)> = None;
++        // Whether every program drawn in `open` merges, and the buffers they sample and write.
++        let mut drawn = (true, 0u16, 0u16);
+         for part in parts {
+             let i = usize::from(part.textured);
+             let (Some(pass), Some(group)) = (passes[i], &groups[i]) else {
+@@ -4038,7 +4093,13 @@ impl PackPost {
+                 if !same {
+                     drop(open.take());
+                     open = Some((self.begin(encoder, pass).forget_lifetime(), i));
++                    drawn = (true, 0, 0);
+                 }
++                drawn = (
++                    drawn.0 && pass.merges(),
++                    drawn.1 | pass.reads,
++                    drawn.2 | pass.written,
++                );
+                 let rp = &mut open.as_mut().expect("open").0;
+                 rp.set_pipeline(pass.render());
+                 rp.set_bind_group(0, group, &[]);
+@@ -4068,8 +4129,12 @@ impl PackPost {
+             }
+             rp.draw(part.range, 0..1);
+         }
+-        drop(open);
++        let (merges, reads, written) = drawn;
++        let carry = open
++            .filter(|_| merges)
++            .and_then(|(rp, i)| Carry::after(rp, passes[i].as_ref()?, reads, written));
+         self.sky = Some(sky);
++        carry
+     }
+ 
+     /// Entities, block entities, translucent entity parts and particles with the pack's
+@@ -4378,13 +4443,17 @@ impl PackPost {
+         frame: &super::Frame,
+         terrain: &mut TerrainDraw<'_>,
+     ) {
+-        if super::sky_visible(frame) || super::end_fog_sky(frame) {
+-            self.draw_sky(device, queue, encoder, size, frame);
+-        }
+-        self.draw_terrain(device, queue, encoder, size, TerrainList::Solid, terrain);
++        // Terrain draws in the sky's render pass when it can.
++        let sky = if super::sky_visible(frame) || super::end_fog_sky(frame) {
++            self.draw_sky(device, queue, encoder, size, frame)
++        } else {
++            None
++        };
++        self.draw_terrain(device, queue, encoder, size, TerrainList::Solid, terrain, sky);
+         self.draw_entities(device, queue, encoder, size, false);
+-        self.draw_lines(device, queue, encoder, size);
+-        self.draw_clouds(device, queue, encoder, size);
++        // The clouds draw in the outline's render pass when they can.
++        let lines = self.draw_lines(device, queue, encoder, size);
++        self.draw_clouds(device, queue, encoder, size, lines);
+         // Only depth2 excludes the opaque first-person hand.
+         if let Some(t) = &self.targets
+             && let Some((copy, _)) = &t.depth2
+@@ -4467,13 +4536,15 @@ impl PackPost {
+         self.hand.is_some()
+     }
+ 
+-    /// The clouds `set_clouds` gave for this frame, with `gbuffers_clouds`.
++    /// The clouds `set_clouds` gave for this frame, with `gbuffers_clouds`: in `carry`, the
++    /// outline's render pass, when they can (`Carry`).
+     fn draw_clouds(
+         &mut self,
+         device: &wgpu::Device,
+         queue: &wgpu::Queue,
+         encoder: &mut wgpu::CommandEncoder,
+         size: [u32; 2],
++        carry: Option<Carry>,
+     ) {
+         // The pass stays for later frames when this one has no clouds.
+         let Some(clouds) = self.cloud_draw.take() else {
+@@ -4482,9 +4553,14 @@ impl PackPost {
+         let Some(mut pass) = self.clouds.take() else {
+             return;
+         };
++        // A pass the clouds can't draw in ends before `bind`, which may record copies.
++        let carry = carry.filter(|c| c.takes(&pass));
+         let group = self.bind(device, queue, encoder, &mut pass, size);
+         {
+-            let mut rp = self.begin(encoder, &pass);
++            let mut rp = match carry {
++                Some(c) => c.rp,
++                None => self.begin(encoder, &pass).forget_lifetime(),
++            };
+             rp.set_pipeline(pass.render());
+             rp.set_bind_group(0, &group, &[]);
+             if pass.buffers
+@@ -4504,24 +4580,21 @@ impl PackPost {
+         self.clouds = Some(pass);
+     }
+ 
+-    /// The block outline `set_lines` gave for this frame, with the pack's lines program.
++    /// The block outline `set_lines` gave for this frame, with the pack's lines program. Its
++    /// render pass is left open for the clouds when it merges (`Carry`).
+     fn draw_lines(
+         &mut self,
+         device: &wgpu::Device,
+         queue: &wgpu::Queue,
+         encoder: &mut wgpu::CommandEncoder,
+         size: [u32; 2],
+-    ) {
++    ) -> Option<Carry> {
+         // The pass stays for later frames when this one has no outline.
+-        let Some(lines) = self.line_draw.take() else {
+-            return;
+-        };
+-        let Some(mut pass) = self.lines.take() else {
+-            return;
+-        };
++        let lines = self.line_draw.take()?;
++        let mut pass = self.lines.take()?;
+         let group = self.bind(device, queue, encoder, &mut pass, size);
++        let mut rp = self.begin(encoder, &pass).forget_lifetime();
+         {
+-            let mut rp = self.begin(encoder, &pass);
+             rp.set_pipeline(pass.render());
+             rp.set_bind_group(0, &group, &[]);
+             if pass.buffers
+@@ -4536,7 +4609,9 @@ impl PackPost {
+             rp.draw(0..6, 0..lines.count);
+         }
+         self.mips_valid &= !pass.written;
++        let carry = Carry::after(rp, &pass, 0, 0);
+         self.lines = Some(pass);
++        carry
+     }
+ 
+     /// Whether the pack draws the block outline itself.
+@@ -4580,6 +4655,7 @@ impl PackPost {
+             size,
+             TerrainList::Translucent,
+             terrain,
++            None,
+         );
+         self.draw_entities(device, queue, encoder, size, true);
+         self.draw_hand_water(device, queue, encoder, size);
+@@ -5066,6 +5142,7 @@ impl PackPost {
+             size,
+             TerrainList::ShadowSolid,
+             terrain,
++            None,
+         );
+         self.draw_shadow_entities(device, queue, encoder, size);
+         let t = self.shadow_targets.as_mut().expect("shadow pass");
+@@ -5078,6 +5155,7 @@ impl PackPost {
+             size,
+             TerrainList::ShadowTranslucent,
+             terrain,
++            None,
+         );
+         let mut comp = std::mem::take(&mut self.shadow_comp);
+         for pass in &mut comp {
+-- 
+2.54.0 (Apple Git-157)
+

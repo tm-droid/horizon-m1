@@ -1,0 +1,132 @@
+From 081177440cf93c1e735dee82e9b4ca24aeb1f11f Mon Sep 17 00:00:00 2001
+From: x <x@x>
+Date: Tue, 10 Nov 2026 20:38:54 +0800
+Subject: [PATCH] pack: keep the B-to-A copy for buffers a shadow-space program
+ touches
+
+---
+ .../src/gfx/pack_post.rs                      | 94 ++++++++++++++++++-
+ 1 file changed, 93 insertions(+), 1 deletion(-)
+
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index 6bb3386fbc..b88e910345 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -561,6 +561,19 @@ impl Pass {
+             && self.viewport.is_none()
+             && !self.group.shadow()
+     }
++    /// The buffers this program, or a compute stage dispatched before it, samples, writes,
++    /// copies, flips, regenerates the mip chain of or binds as an image.
++    fn touches(&self) -> u16 {
++        let images = (self.images.iter())
++            .filter_map(|&(_, image)| match image {
++                Image::Color(b) | Image::ColorBefore(b) => Some(1u16 << b),
++                _ => None,
++            })
++            .fold(0, |m, bit| m | bit);
++        let own = self.reads | self.written | self.copies | self.flip | self.mipmaps | images;
++        self.compute.iter().fold(own, |m, c| m | c.touches())
++    }
++
+     /// Back to the uniform values the pass was made with, and no bind groups.
+     fn reset_history(&mut self) {
+         self.block.clone_from(&self.initial_block);
+@@ -4831,6 +4844,82 @@ impl PackPost {
+         !pass.group.shadow() && pass.group != Group::Final && sizes.any(|s| Some(s) != first)
+     }
+ 
++    /// Whether buffer `b`'s A side can start the frame as it is, without the B side copied
++    /// back: nothing reads what it holds. In program order the first program touching `b`
++    /// writes all of it (`Pass::overwrites`) and flips it, without reading, copying or binding
++    /// it, after no gbuffers program touching it has drawn; reads then go to the B side it
++    /// wrote, and every later program writing or flipping `b` writes all of its other side.
++    /// No stage flip (`deferred_pre`, `composite_pre`) moves `b` back to an unwritten side.
++    fn a_unread(&self, b: usize) -> bool {
++        let bit = 1u16 << b;
++        if (self.deferred_pre | self.composite_pre) & bit != 0 {
++            return false;
++        }
++        let touch = |p: &Pass| p.touches() & bit != 0;
++        let writes_all = |p: &Pass| p.overwrites && p.written & p.flip & bit != 0;
++        // Gbuffers programs draw in place on the current side: before deferred, or (late
++        // entities counted here too) before composite.
++        let sky = (self.sky.iter()).flat_map(|s| s.basic.iter().chain(&s.textured));
++        let entities = (self.entities.iter()).flat_map(|e| e.passes.iter().flatten());
++        let opaque = (self.terrain.iter())
++            .chain(&self.terrain_cutout)
++            .chain(sky)
++            .chain(entities)
++            .chain(&self.clouds)
++            .chain(&self.lines)
++            .chain(self.hand.iter().map(|h| &h.0))
++            .any(touch);
++        let translucent = (self.water.iter())
++            .chain(&self.hand_water)
++            .chain(self.weather.iter().flatten())
++            .any(touch);
++        // Shadow-space programs bind main buffers too (`bind` resolves `Image::Color` to
++        // them, on either side), and they are not in `self.passes`: keep the copy for those.
++        let shadow_entities = (self.entities.iter()).flat_map(|e| e.shadow.iter().flatten());
++        if (self.shadow_terrain.iter())
++            .chain(&self.shadow_water)
++            .chain(&self.shadow_comp)
++            .chain(shadow_entities)
++            .any(touch)
++        {
++            return false;
++        }
++        let mut written = false;
++        for pass in &self.passes {
++            // As the frame runs them: these are skipped.
++            if (pass.group == Group::Setup && !self.setup_pending) || self.sizes_differ(pass) {
++                continue;
++            }
++            if written {
++                if (pass.written | pass.flip) & bit != 0 && !writes_all(pass) {
++                    return false;
++                }
++                continue;
++            }
++            if !touch(pass) {
++                continue;
++            }
++            let drawn_before = match pass.group {
++                Group::Setup | Group::Begin | Group::Prepare => false,
++                Group::Composite | Group::Final => opaque || translucent,
++                _ => opaque,
++            };
++            if drawn_before
++                || pass.group.shadow()
++                || !writes_all(pass)
++                || (pass.reads | pass.copies | pass.mipmaps) & bit != 0
++                || pass.images.iter().any(|&(_, image)| {
++                    matches!(image, Image::Color(i) | Image::ColorBefore(i) if i == b)
++                })
++                || pass.compute.iter().any(touch)
++            {
++                return false;
++            }
++            written = true;
++        }
++        written
++    }
++
+     /// Whether the pack draws terrain itself, or has nothing draw it.
+     pub fn has_terrain(&self) -> bool {
+         self.terrain.is_some() || self.terrain_cutout.is_some() || self.terrain_undrawn
+@@ -5413,7 +5502,10 @@ impl PackPost {
+         // copied back to A, and B keeps what was last written into it: a model that fits Iris 1.11.7's
+         // values in probe packs of our own (#9009), not a documented Iris rule. colortex0's A is
+         // overwritten by the world below.
+-        for b in (1..BUFFERS).filter(|&b| self.main & 1 << b != 0 && self.clears[b].is_none()) {
++        // Nor is a buffer whose A side nothing reads before it is written whole (`a_unread`).
++        for b in (1..BUFFERS).filter(|&b| {
++            self.main & 1 << b != 0 && self.clears[b].is_none() && !self.a_unread(b)
++        }) {
+             if let Some([a, b_side]) = &targets.color[b] {
+                 encoder.copy_texture_to_texture(
+                     b_side.texture().as_image_copy(),
+-- 
+2.54.0 (Apple Git-157)
+

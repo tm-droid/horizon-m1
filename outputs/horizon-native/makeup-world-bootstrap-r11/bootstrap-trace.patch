@@ -1,0 +1,30 @@
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -2376,6 +2376,27 @@
+                 false
+             }
+         });
++        // Record the pipelines and resource dependencies that actually survived translation.
++        // Shadow groups use their own color banks, even when they reference buffer zero.
++        if std::env::var("HORIZON_SHADER_PACK_BOOTSTRAP_TRACE").as_deref() == Ok("1") {
++            notes.push(format!(
++                "bootstrap trace: color0={:?}, depth={blit_depth}, blit clears={cleared:?}, other clears={other_clears:?}, deferred preflip={:#06x}, composite preflip={:#06x}",
++                formats[0], mask(&post.deferred_pre), mask(&post.composite_pre),
++            ));
++            for (slot, p) in every_pass().enumerate() {
++                for (nested, pass) in p.compute.iter().enumerate().map(|(i, p)| (Some(i), p))
++                    .chain(std::iter::once((None, p)))
++                {
++                    notes.push(format!(
++                        "bootstrap trace: pass={slot}, child={nested:?}, name={}, group={:?}, reads={:#06x}, writes={:?}, flip={:#06x}, mips={:#06x}, copies={:#06x}, images={}, storage={}, viewport={:?}, geometry={}, depth={:?}",
++                        pass.name, pass.group, pass.reads, pass.writes, pass.flip, pass.mipmaps,
++                        pass.copies, pass.images.len(), pass.buffers, pass.viewport, pass.geometry,
++                        [Source::Depth, Source::Depth1, Source::Depth2]
++                            .map(|src| pass.samplers.iter().any(|s| s.source == src)),
++                    ));
++                }
++            }
++        }
+         let float = wgpu::TextureSampleType::Float { filterable: true };
+         let blit_targets = std::iter::once(target(formats[0]));
+         // Cleared by the pass's load operation; the shader writes nothing there.

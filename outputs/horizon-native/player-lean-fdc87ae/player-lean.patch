@@ -1,0 +1,58 @@
+--- a/crates/horizon-client/src/mobs/cem_anim.rs	2026-11-10 19:57:41
++++ b/crates/horizon-client/src/mobs/cem_anim.rs	2026-11-10 19:57:41
+@@ -9,7 +9,7 @@
+ //! entity's `var.*` / `varb.*`, which persist from frame to frame, the `global_var.*` /
+ //! `global_varb.*` every entity shares, and `render.*`, which nothing reads back yet.
+ 
+-use super::{Mob, Part, anim::Poses, anim::State};
++use super::{Mob, Part, anim::Poses, anim::State, living::wrap};
+ use horizon_optifine::cem::expr::{Expr, compile};
+ use std::{
+     cell::{Cell, RefCell},
+@@ -618,8 +618,13 @@
+             PosX => m.position.x as f32,
+             PosY => m.position.y as f32,
+             PosZ => m.position.z as f32,
+-            RotX => m.head_pitch,
+-            RotY => m.body_yaw,
++            // EMF/OptiFine feed rot_x/rot_y in radians. Fresh Animations lerps rot_y
++            // into a yaw drag and clamps the difference to +-1, so degrees saturate the
++            // clamp and lean every running player sideways. Body yaw is the
++            // partial-tick one the model is drawn with (same lerp as render.rs).
++            RotX => m.head_pitch.to_radians(),
++            RotY => (m.previous_body_yaw + wrap(m.body_yaw - m.previous_body_yaw) * s.partial)
++                .to_radians(),
+             Id => m.id as f32,
+             // OptiFine's `time` loops at 27720 ticks to keep float precision.
+             Time => (frame.time % 27720.0) as f32,
+@@ -959,6 +964,30 @@
+         assert_eq!(poses.get("root")[..6], [5.0, 1.5, 30.0, 7.0, 5.0, 2.0]);
+     }
+ 
++    #[test]
++    fn rot_x_and_rot_y_are_radians() {
++        let mut m = mob();
++        m.body_yaw = 90.0;
++        m.previous_body_yaw = 90.0;
++        m.head_pitch = 180.0;
++        let s = State {
++            pos: 0.0,
++            speed: 0.0,
++            age: 0.0,
++            y_rot: 0.0,
++            x_rot: 0.0,
++            swing: 0.0,
++            baby: false,
++            partial: 0.5,
++        };
++        let model = bone("root", vec![]);
++        let animation = animate(&model, &[("root.tx", "rot_y"), ("root.ty", "rot_x")]);
++        let mut poses = Poses::new(&model);
++        animation.run_in(&Frame::default(), &m, &s, &mut poses);
++        assert!((poses.get("root")[0] - std::f32::consts::FRAC_PI_2).abs() < 1.0e-5);
++        assert!((poses.get("root")[1] - std::f32::consts::PI).abs() < 1.0e-5);
++    }
++
+     /// A mob at the origin of the test species.
+     fn mob() -> Mob {
+         Mob::new(

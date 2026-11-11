@@ -1,0 +1,290 @@
+diff --git a/crates/horizon-client-render/src/gfx/pack_atlas.rs b/crates/horizon-client-render/src/gfx/pack_atlas.rs
+index 4f092d7787..d460794998 100644
+--- a/crates/horizon-client-render/src/gfx/pack_atlas.rs
++++ b/crates/horizon-client-render/src/gfx/pack_atlas.rs
+@@ -728,6 +728,13 @@ impl PackAtlas {
+             ),
+             ("mc_Entity", entity),
+             ("at_midBlock", mid_block),
++            // Horizon's own: the face's HDR tier (`mesher::emitting`'s code in the colour's low
++            // alpha nibble): 0 for none, 1 to 4 for low to very bright, plus 4 when the whole
++            // face shines (`mesher::WHOLE`).
++            (
++                "horizonTier",
++                "float(15u - (uint(round(hz_v_color.a * 255.0)) & 15u))",
++            ),
+             (
+                 "mc_midTexCoord",
+                 "vec4((hz_cell + hz_mid) * hz_scale, 0.0, 1.0)",
+diff --git a/crates/horizon-client-render/src/gfx/pack_atlas/fade_test.rs b/crates/horizon-client-render/src/gfx/pack_atlas/fade_test.rs
+index ef24af647c..eea3e5e25d 100644
+--- a/crates/horizon-client-render/src/gfx/pack_atlas/fade_test.rs
++++ b/crates/horizon-client-render/src/gfx/pack_atlas/fade_test.rs
+@@ -157,6 +157,7 @@ fn terrain_fade_reaches_pack_pixels_through_real_instances() {
+                             flat,
+                             geometry,
+                             origin,
++                            0x80ffffff,
+                         );
+                         let fade = if requested { expected } else { 1.0 };
+                         let expected = [
+@@ -182,6 +183,96 @@ fn terrain_fade_reaches_pack_pixels_through_real_instances() {
+     assert_eq!(count, 98);
+ }
+ 
++/// `horizonTier`: the HDR tier the mesher marks a light source's faces with (`mesher::emitting`),
++/// read by a pack's terrain program, flat or instanced.
++#[test]
++fn terrain_tier_reaches_pack_pixels() {
++    let instance = crate::gfx::test_gpu::instance();
++    let adapter = match pollster::block_on(instance.request_adapter(&Default::default())) {
++        Ok(adapter) => adapter,
++        Err(error) => {
++            eprintln!("SKIP terrain tier GPU control: no adapter: {error}");
++            return;
++        }
++    };
++    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
++    let array = device.create_texture(&wgpu::TextureDescriptor {
++        label: None,
++        size: wgpu::Extent3d {
++            width: 2,
++            height: 2,
++            depth_or_array_layers: 1,
++        },
++        mip_level_count: 1,
++        sample_count: 1,
++        dimension: wgpu::TextureDimension::D2,
++        format: wgpu::TextureFormat::Rgba8Unorm,
++        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::TEXTURE_BINDING,
++        view_formats: &[],
++    });
++    let mut encoder = device.create_command_encoder(&Default::default());
++    let atlas = PackAtlas::new(&device, &mut encoder, &[array], 1, 1, 2).unwrap();
++    queue.submit([encoder.finish()]);
++    let folder = ProbePack(
++        std::env::temp_dir().join(format!("horizon-terrain-tier-{}", std::process::id())),
++    );
++    std::fs::create_dir_all(folder.0.join("shaders")).unwrap();
++    std::fs::write(
++        folder.0.join("shaders/gbuffers_terrain.vsh"),
++        "#version 330\nin float horizonTier;\nout vec4 observation;\n\
++         void main() {\nobservation = vec4(horizonTier, 0.0, 0.0, 0.0);\n\
++         gl_Position = vec4(0.0, 0.0, 0.0, 1.0);\n}",
++    )
++    .unwrap();
++    std::fs::write(
++        folder.0.join("shaders/gbuffers_terrain.fsh"),
++        "#version 330\nin vec4 observation;\nlayout(location = 0) out uvec4 pixel;\n\
++         void main() { pixel = floatBitsToUint(observation); }",
++    )
++    .unwrap();
++    let pack = horizon_shaders::Pack::open(&folder.0).unwrap();
++    let mut macros = horizon_shaders::Macros::standard();
++    let (properties, _) = horizon_shaders::read_properties(&pack, &mut macros);
++    use crate::mesher::{BRIGHT, LOW, VERY_BRIGHT, WHOLE, emitting};
++    // No light, low, very bright, and bright all over (4 more).
++    let cases = [
++        (0, 0.0),
++        (LOW, 1.0),
++        (VERY_BRIGHT, 4.0),
++        (BRIGHT | WHOLE, 7.0),
++    ];
++    for flat in [false, true] {
++        let post = horizon_shaders::load_post(
++            &pack,
++            "",
++            &properties,
++            &macros,
++            &horizon_shaders::GameInputs {
++                terrain: Some(atlas.terrain_inputs(flat)),
++                ..Default::default()
++            },
++        );
++        let program = post
++            .terrain
++            .as_ref()
++            .unwrap_or_else(|| panic!("{:?}", post.notes));
++        for (tier, expected) in cases {
++            let origin = section_instance([0.0; 3], 0, 1.0);
++            let pixel = sample(
++                &device,
++                &queue,
++                &atlas,
++                program.program.as_ref().unwrap(),
++                flat,
++                false,
++                origin,
++                emitting(0xffff_ffff, tier),
++            );
++            assert_eq!(pixel[0], expected, "tier {tier} flat={flat}");
++        }
++    }
++}
++
+ fn sample(
+     device: &wgpu::Device,
+     queue: &wgpu::Queue,
+@@ -190,6 +281,7 @@ fn sample(
+     flat: bool,
+     geometry: bool,
+     origin: [f32; 4],
++    color: u32,
+ ) -> [f32; 4] {
+     let buffer = |bytes: &[u8], usage| {
+         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+@@ -209,7 +301,7 @@ fn sample(
+     let slots = buffer(bytemuck::bytes_of(&0u32), wgpu::BufferUsages::STORAGE);
+     let vertices: Vec<_> = [[0., 0., 0.], [1., 0., 0.], [1., 1., 0.], [0., 1., 0.]]
+         .into_iter()
+-        .map(|pos| TerrainVertex::new(pos, [0.25, 0.75], 0, 0x80ffffff, 0))
++        .map(|pos| TerrainVertex::new(pos, [0.25, 0.75], 0, color, 0))
+         .collect();
+     let data = buffer(
+         bytemuck::cast_slice(&vertices),
+diff --git a/crates/horizon-client-render/src/gfx/pack_entities.rs b/crates/horizon-client-render/src/gfx/pack_entities.rs
+index 3e65af97ed..4368fd66d5 100644
+--- a/crates/horizon-client-render/src/gfx/pack_entities.rs
++++ b/crates/horizon-client-render/src/gfx/pack_entities.rs
+@@ -107,6 +107,10 @@ pub fn inputs() -> horizon_shaders::GbuffersInputs {
+             "at_velocity",
+             "hz_velocity(gbufferModelView, gbufferPreviousModelView)",
+         ),
++        // Horizon's own, as for terrain: the HDR tier of a light-giving item, particle or glowing
++        // text (`mesher::hdr_tier`, the overlay's high bits), 0 for none, 1 to 4 for low to very
++        // bright.
++        ("horizonTier", "float((hz_v_overlay >> 16u) & 255u)"),
+     ];
+     horizon_shaders::GbuffersInputs {
+         declarations,
+@@ -1628,3 +1632,44 @@ mod velocity_translate_tests {
+         let _ = std::fs::remove_dir_all(&dir);
+     }
+ }
++
++#[cfg(test)]
++mod tier_translate_tests {
++    /// A pack's entity and hand programs may read `horizonTier`, the overlay's HDR tier.
++    #[test]
++    fn a_pack_reading_horizon_tier_translates_for_entities_and_the_hand() {
++        let dir = std::env::temp_dir().join(format!("hz-entity-tier-{}", std::process::id()));
++        let shaders = dir.join("shaders");
++        std::fs::create_dir_all(&shaders).unwrap();
++        std::fs::write(
++            shaders.join("gbuffers_entities.vsh"),
++            "#version 120\nattribute float horizonTier;\nvarying float t;\n\
++             void main() {\n    gl_Position = ftransform();\n    t = horizonTier;\n}\n",
++        )
++        .unwrap();
++        std::fs::write(
++            shaders.join("gbuffers_entities.fsh"),
++            "#version 120\nvarying float t;\nvoid main() {\n    gl_FragData[0] = vec4(t);\n}\n",
++        )
++        .unwrap();
++        let pack = horizon_shaders::Pack::open(&dir).unwrap();
++        let m = horizon_shaders::Macros::standard();
++        let vsh = horizon_shaders::preprocess(&pack, "gbuffers_entities.vsh", &m);
++        let fsh = horizon_shaders::preprocess(&pack, "gbuffers_entities.fsh", &m);
++        for (who, inputs) in [
++            ("entities", super::inputs()),
++            ("hand", super::super::pack_hand::inputs()),
++        ] {
++            let attribute = inputs.attributes.iter().find(|(n, _)| n == "horizonTier");
++            assert!(attribute.is_some(), "{who}");
++            horizon_shaders::translate_gbuffers(
++                &vsh,
++                &fsh,
++                horizon_shaders::Target::Buffers,
++                &inputs,
++            )
++            .unwrap_or_else(|e| panic!("{who}: {e:?}"));
++        }
++        let _ = std::fs::remove_dir_all(&dir);
++    }
++}
+diff --git a/crates/horizon-client-render/src/gfx/pack_uniforms.rs b/crates/horizon-client-render/src/gfx/pack_uniforms.rs
+index 24f681599f..8fccdc3291 100644
+--- a/crates/horizon-client-render/src/gfx/pack_uniforms.rs
++++ b/crates/horizon-client-render/src/gfx/pack_uniforms.rs
+@@ -359,6 +359,25 @@ pub const NAMES: &[&str] = &[
+     "hasCeiling",
+     "hz_fullbright",
+     "cloudTime",
++    // Horizon's own: Horizon Extras' dynamic lights (`dynamic_light.rs`), nearest first: how
++    // many, and each one's camera-relative position and light level (zeros past the count).
++    "horizonDynamicLightCount",
++    "horizonDynamicLight0",
++    "horizonDynamicLight1",
++    "horizonDynamicLight2",
++    "horizonDynamicLight3",
++    "horizonDynamicLight4",
++    "horizonDynamicLight5",
++    "horizonDynamicLight6",
++    "horizonDynamicLight7",
++    "horizonDynamicLight8",
++    "horizonDynamicLight9",
++    "horizonDynamicLight10",
++    "horizonDynamicLight11",
++    "horizonDynamicLight12",
++    "horizonDynamicLight13",
++    "horizonDynamicLight14",
++    "horizonDynamicLight15",
+     "isElytraFlying",
+     "cloudHeight",
+ ];
+@@ -938,6 +957,12 @@ impl FrameUniforms {
+                 "gbufferProjectionInverse" => m4(projection_inverse),
+                 "gbufferPreviousModelView" => m4(previous_view),
+                 "gbufferPreviousProjection" => m4(previous_projection),
++                "horizonDynamicLightCount" => Value::i(&[frame.dynamic_lights.len() as i32]),
++                n if dynamic_light_index(n).is_some() => Value::f(
++                    &(dynamic_light_index(n).and_then(|k| frame.dynamic_lights.get(k)))
++                        .copied()
++                        .unwrap_or([0.0; 4]),
++                ),
+                 "heldItemId" => Value::i(&[inputs.held_items[0]]),
+                 "heldItemId2" => Value::i(&[inputs.held_items[1]]),
+                 "heldBlockLightValue" => Value::i(&[inputs.held_light[0]]),
+@@ -1794,6 +1819,29 @@ pub(super) mod initial_history_tests {
+         assert_eq!(crate::clouds::drift(256 * 400 + 3, 0.25, 256), 3.25);
+     }
+ 
++    #[test]
++    fn the_dynamic_lights_reach_the_pack_nearest_first() {
++        let hud = HudBatch::new([800, 450]);
++        let mut f = frame(&hud);
++        let lights = [[1.0, 2.0, 3.0, 14.0], [-4.0, 0.5, 6.0, 7.0]];
++        f.dynamic_lights = &lights;
++        let mut u = FrameUniforms::default();
++        u.update(&f, &PackInputs::default(), [800, 450]);
++        let count = index("horizonDynamicLightCount").unwrap();
++        assert_eq!(int(&u, count), 2);
++        assert_eq!(float(&u, "horizonDynamicLight0")[..4], lights[0]);
++        assert_eq!(float(&u, "horizonDynamicLight1")[..4], lights[1]);
++        // Past the count, and the last of the sixteen: zeros.
++        assert_eq!(float(&u, "horizonDynamicLight2")[..4], [0.0; 4]);
++        assert_eq!(float(&u, "horizonDynamicLight15")[..4], [0.0; 4]);
++        assert_eq!(index("horizonDynamicLight16"), None);
++        // Off (no lights): none.
++        f.dynamic_lights = &[];
++        u.update(&f, &PackInputs::default(), [800, 450]);
++        assert_eq!(int(&u, count), 0);
++        assert_eq!(float(&u, "horizonDynamicLight0")[..4], [0.0; 4]);
++    }
++
+     #[test]
+     fn environmental_smoothing_starts_at_the_first_inputs_without_resetting_each_frame() {
+         let hud = HudBatch::new([800, 450]);
+@@ -2543,6 +2591,12 @@ pub(super) mod initial_history_tests {
+     }
+ }
+ 
++/// `horizonDynamicLight<k>`'s `k`, for the lights `Frame::dynamic_lights` holds.
++fn dynamic_light_index(name: &str) -> Option<usize> {
++    let k: usize = name.strip_prefix("horizonDynamicLight")?.parse().ok()?;
++    (k < crate::dynamic_light::MAX).then_some(k)
++}
++
+ #[cfg(test)]
+ #[path = "pack_uniforms/ftransform_test.rs"]
+ mod ftransform_test;

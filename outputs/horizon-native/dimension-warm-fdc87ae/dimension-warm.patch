@@ -1,0 +1,548 @@
+From fec9f46d4f0ad13038d3ab1c13a396cca993231b Mon Sep 17 00:00:00 2001
+From: x <x@x>
+Date: Tue, 10 Nov 2026 20:45:30 +0800
+Subject: [PATCH] Warm other dimensions' shader pack pipelines in the
+ background
+
+Builds the nether/end folders' pipelines on 2 threads after the running pack settles, drops
+them; Metal's on-disk cache keeps the work. Warm skips the mc_Entity/block/item id tables
+(unused by pipelines), keeping the main-thread hitch small.
+---
+ crates/horizon-client-render/src/gfx.rs       |  60 ++++++-
+ .../src/gfx/pack_post.rs                      |  29 ++-
+ .../src/gfx/pack_warm.rs                      |  92 ++++++++++
+ .../horizon-client/src/game/shader_packs.rs   | 166 ++++++++++++------
+ 4 files changed, 284 insertions(+), 63 deletions(-)
+ create mode 100644 crates/horizon-client-render/src/gfx/pack_warm.rs
+
+diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+index 0536d6ade4..32ea8bbd1c 100644
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -196,6 +196,7 @@ mod pack_lines;
+ mod pack_post;
+ mod pack_shadow;
+ mod pack_sky;
++pub mod pack_warm;
+ mod pack_textures;
+ pub(crate) mod pack_timing;
+ pub mod pack_uniforms;
+@@ -1438,6 +1439,10 @@ pub struct Renderer {
+     pack_post: Option<(i32, Option<pack_post::PackPost>)>,
+     /// A `shaders/` pack whose pipelines build on a thread of their own (`load_shader_pack`).
+     pack_loading: Option<PackLoading>,
++    /// The build of another dimension's folder, run to warm the driver's shader cache and then
++    /// dropped (`pack_warm`).
++    pack_warming: Option<PackLoading>,
++    pack_warm: pack_warm::Warm,
+     /// The post passes of one of Horizon's own shader packs; never beside `pack_post`'s.
+     native: Option<native_pack::NativePack>,
+     /// Time the shader pack's passes on the GPU (F3, or `HORIZON_SHADER_PACK_TIMING`).
+@@ -4916,6 +4921,8 @@ impl Renderer {
+             hdr_marker: None,
+             pack_post: None,
+             pack_loading: None,
++            pack_warming: None,
++            pack_warm: Default::default(),
+             native: None,
+             pass_timing: pack_timing::PassTiming::logging(),
+             pass_timing_gap: std::time::Duration::ZERO,
+@@ -6680,6 +6687,7 @@ impl Renderer {
+             )
+         });
+         self.pack_loading = None;
++        self.pack_warming = None;
+         self.install_shader_pack(dimension, post.transpose())
+     }
+     /// Runs the pack `set_shader_pack` or `load_shader_pack` built (`None`: no pack), or none when
+@@ -6702,6 +6710,7 @@ impl Renderer {
+             let programs = p.programs().into_iter().map(str::to_owned).collect();
+             (programs, p.notes.clone())
+         });
++        self.pack_warm.settle();
+         self.pack_post = Some((dimension, post));
+         if self.pack_post.as_ref().is_some_and(|p| p.1.is_some()) {
+             self.native = None;
+@@ -6755,6 +6764,9 @@ impl Renderer {
+     /// As `set_shader_pack` with a pack, but its pipelines build on a thread of their own while
+     /// the game keeps drawing without one: the driver compiles a big pack's programs for seconds.
+     /// `poll_shader_pack` runs it once they are built. `label` and `started` come back with it.
++    /// `warm`: the pack is for another dimension than the running one's, built on fewer threads
++    /// only to warm the driver's shader cache, and dropped when done (`pack_warm`).
++    #[allow(clippy::too_many_arguments)]
+     pub fn load_shader_pack(
+         &mut self,
+         dimension: i32,
+@@ -6762,6 +6774,7 @@ impl Renderer {
+         block_ids: Vec<i32>,
+         label: String,
+         started: std::time::Instant,
++        warm: bool,
+     ) {
+         let device = self.device.clone();
+         let queue = self.queue.clone();
+@@ -6829,7 +6842,10 @@ impl Renderer {
+                 weather: true,
+                 hand: true,
+             };
+-            pack_post::PackPost::new(&device, &queue, &adapter, pack, format, world, &cancelled)
++            let threads = if warm { pack_warm::THREADS } else { 8 };
++            pack_post::PackPost::new_with(
++                &device, &queue, &adapter, pack, format, world, &cancelled, threads,
++            )
+         };
+         // A pack is not the game's code: a panic building it turns the pack off (#3525).
+         let thread = std::thread::Builder::new()
+@@ -6837,16 +6853,23 @@ impl Renderer {
+             .spawn(move || crate::crash::contain(build));
+         match thread {
+             Ok(thread) => {
+-                // The last pack doesn't draw this dimension meanwhile.
+-                self.pack_post = None;
+-                self.pack_loading = Some(PackLoading {
++                let loading = PackLoading {
+                     dimension,
+                     thread,
+                     label,
+                     started,
+                     _cancel: CancelOnDrop(cancel),
+-                });
++                };
++                if warm {
++                    self.pack_warming = Some(loading);
++                } else {
++                    // The last pack doesn't draw this dimension meanwhile.
++                    self.pack_warming = None;
++                    self.pack_post = None;
++                    self.pack_loading = Some(loading);
++                }
+             }
++            Err(e) if warm => log::warn!("shader pack {label}: no thread to warm it on: {e}"),
+             Err(e) => {
+                 log::error!("shader pack {label}: no thread to build it on: {e}");
+                 // Off for this dimension, as a pack that fails, not tried again every frame.
+@@ -6867,6 +6890,15 @@ impl Renderer {
+         std::time::Instant,
+         std::result::Result<Option<(Vec<String>, Vec<String>)>, pack_post::Refused>,
+     )> {
++        if self.pack_warming.as_ref().is_some_and(|w| w.thread.is_finished())
++            && let Some(w) = self.pack_warming.take()
++        {
++            let ms = w.started.elapsed().as_millis();
++            // The built pack is dropped: only the driver's cache keeps the work.
++            drop(w.thread.join());
++            log::info!("shader pack {}: warmed dimension {} in {ms} ms", w.label, w.dimension);
++            self.pack_warm.settle();
++        }
+         if !self.pack_loading.as_ref()?.thread.is_finished() {
+             return None;
+         }
+@@ -6892,6 +6924,8 @@ impl Renderer {
+     /// Drops the running shader pack, of either kind.
+     pub fn drop_shader_packs(&mut self) {
+         self.pack_loading = None;
++        self.pack_warming = None;
++        self.pack_warm = Default::default();
+         self.pack_post = None;
+         self.native = None;
+         self.pack_atlas = None;
+@@ -7137,6 +7171,22 @@ impl Renderer {
+         }
+     }
+ 
++    /// Whether the running pack could warm another dimension's folder now (`pack_warm`).
++    pub fn shader_pack_warm_due(&self) -> bool {
++        self.pack_warm.due()
++            && self.pack_loading.is_none()
++            && self.pack_warming.is_none()
++            && matches!(self.pack_post, Some((_, Some(_))))
++    }
++    /// The next of `others` (a key and its folder) to warm: see `pack_warm::Warm::pick`.
++    pub fn pick_shader_pack_warm<T: Copy>(
++        &mut self,
++        current: &str,
++        others: &[(T, String)],
++    ) -> Option<T> {
++        self.pack_warm.pick(current, others)
++    }
++
+     /// The dimension the shader pack was last set for.
+     pub fn shader_pack_dimension(&self) -> Option<i32> {
+         let loading = self.pack_loading.as_ref().map(|l| l.dimension);
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index d81a043cbd..175aa1325c 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -1502,11 +1502,21 @@ fn compile(
+     device: &wgpu::Device,
+     jobs: &[Job],
+     cancel: &std::sync::atomic::AtomicBool,
++) -> Option<(String, String)> {
++    compile_with(device, jobs, cancel, 8)
++}
++
++/// `compile` on `cap` threads at most.
++fn compile_with(
++    device: &wgpu::Device,
++    jobs: &[Job],
++    cancel: &std::sync::atomic::AtomicBool,
++    cap: usize,
+ ) -> Option<(String, String)> {
+     use std::sync::atomic::{AtomicUsize, Ordering};
+     let threads = std::thread::available_parallelism()
+         .map_or(1, |n| n.get())
+-        .clamp(1, 8)
++        .clamp(1, cap.max(1))
+         .min(jobs.len().max(1));
+     let next = AtomicUsize::new(0);
+     let refused = std::sync::Mutex::new(None);
+@@ -2463,11 +2473,26 @@ impl PackPost {
+         screen: wgpu::TextureFormat,
+         world: World<'_>,
+         cancel: &std::sync::atomic::AtomicBool,
++    ) -> Result<Self, Refused> {
++        Self::new_with(device, queue, adapter, post, screen, world, cancel, 8)
++    }
++
++    /// `new`, compiling the pipelines on `threads` threads at most.
++    #[allow(clippy::too_many_arguments)]
++    pub fn new_with(
++        device: &wgpu::Device,
++        queue: &wgpu::Queue,
++        adapter: &wgpu::Adapter,
++        post: Post,
++        screen: wgpu::TextureFormat,
++        world: World<'_>,
++        cancel: &std::sync::atomic::AtomicBool,
++        threads: usize,
+     ) -> Result<Self, Refused> {
+         use std::sync::atomic::Ordering;
+         let spare = (post.clone(), world.clone());
+         let (built, jobs) = Self::build(device, queue, adapter, post, screen, world, true, cancel)?;
+-        let refused = compile(device, &jobs, cancel);
++        let refused = compile_with(device, &jobs, cancel, threads);
+         // Some pipelines may be left unmade: the pack can't draw.
+         if cancel.load(Ordering::Relaxed) {
+             return Err(Refused::cancelled(built.notes));
+diff --git a/crates/horizon-client-render/src/gfx/pack_warm.rs b/crates/horizon-client-render/src/gfx/pack_warm.rs
+new file mode 100644
+index 0000000000..5a4679daf4
+--- /dev/null
++++ b/crates/horizon-client-render/src/gfx/pack_warm.rs
+@@ -0,0 +1,92 @@
++//! Warming a shader pack's other dimension folders. The first visit to a dimension whose folder
++//! the driver hasn't compiled yet takes seconds (Metal compiles each program cold; a folder it
++//! has seen takes a fraction of that), so once the current dimension's pack runs, the game
++//! builds the other folders' pipelines in the background, one at a time, and drops them: only
++//! the driver's shader cache keeps the work.
++
++use std::time::{Duration, Instant};
++
++/// How long a pack runs (or a warm-up built) before the next warm-up starts.
++const SETTLE: Duration = Duration::from_secs(5);
++/// The threads a warm-up compiles on: few, so the game keeps its cores.
++pub(super) const THREADS: usize = 2;
++
++/// Which folders have been built or are being warmed since the pack was picked.
++#[derive(Default)]
++pub struct Warm {
++    folders: Vec<String>,
++    /// Nothing left to warm.
++    done: bool,
++    settled: Option<Instant>,
++}
++
++impl Warm {
++    /// The pack was installed (or a warm-up ended): wait before the next warm-up.
++    pub(super) fn settle(&mut self) {
++        self.settled = Some(Instant::now());
++    }
++
++    /// Whether to look for a folder to warm now.
++    pub(super) fn due(&self) -> bool {
++        !self.done && self.settled.is_some_and(|t| t.elapsed() >= SETTLE)
++    }
++
++    /// The first of `others` (a key and its folder) whose folder isn't `current` or one already
++    /// warmed, marked warmed; `None` (and no more asking) when all are.
++    pub fn pick<T: Copy>(&mut self, current: &str, others: &[(T, String)]) -> Option<T> {
++        if !self.folders.iter().any(|f| f == current) {
++            self.folders.push(current.to_owned());
++        }
++        let found = others.iter().find(|(_, f)| !self.folders.contains(f));
++        match found {
++            Some((key, folder)) => {
++                self.folders.push(folder.clone());
++                Some(*key)
++            }
++            None => {
++                self.done = true;
++                None
++            }
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn others() -> Vec<(i32, String)> {
++        vec![(-1, "world-1".into()), (1, "world1".into())]
++    }
++
++    #[test]
++    fn each_distinct_folder_is_picked_once() {
++        let mut warm = Warm::default();
++        assert_eq!(warm.pick("world0", &others()), Some(-1));
++        assert_eq!(warm.pick("world0", &others()), Some(1));
++        assert_eq!(warm.pick("world0", &others()), None);
++        assert!(warm.done);
++    }
++
++    #[test]
++    fn the_current_folder_and_shared_folders_are_not_warmed() {
++        let mut warm = Warm::default();
++        // The nether runs the overworld's folder; the end has its own.
++        let both = vec![(0, "world0".to_owned()), (1, "world1".to_owned())];
++        assert_eq!(warm.pick("world0", &both), Some(1));
++        assert_eq!(warm.pick("world0", &both), None);
++        // Another pack: nothing is remembered.
++        let mut fresh = Warm::default();
++        assert_eq!(fresh.pick("world1", &both), Some(0));
++    }
++
++    #[test]
++    fn not_due_until_settled() {
++        let mut warm = Warm::default();
++        assert!(!warm.due());
++        warm.settled = Some(Instant::now() - SETTLE);
++        assert!(warm.due());
++        warm.done = true;
++        assert!(!warm.due());
++    }
++}
+diff --git a/crates/horizon-client/src/game/shader_packs.rs b/crates/horizon-client/src/game/shader_packs.rs
+index 3e7131cb8d..7f2ff77062 100644
+--- a/crates/horizon-client/src/game/shader_packs.rs
++++ b/crates/horizon-client/src/game/shader_packs.rs
+@@ -195,7 +195,33 @@ pub(super) struct PackIds {
+     pub(super) separate_ao: bool,
+ }
+ 
++/// The dimensions and their legacy ids, for `Game::next_pack_warm`.
++const DIMENSIONS: [(Dim, i32); 3] = [(Dim::Overworld, 0), (Dim::Nether, -1), (Dim::End, 1)];
++
+ impl Game<'_> {
++    /// Another dimension, with its legacy id, whose folder's programs to build in the background
++    /// (`HORIZON_PACK_WARM=0` turns it off): once the running dimension's pack has settled, the
++    /// driver compiles each folder's programs cold only once, so a later change of dimension
++    /// finds them warm. None when all folders that differ have been built.
++    fn next_pack_warm(&mut self, path: &std::path::Path, dimension: i32) -> Option<(Dim, i32)> {
++        if std::env::var_os("HORIZON_PACK_WARM").is_some_and(|v| v == "0") {
++            return None;
++        }
++        let current = self.dim;
++        let renderer = self.renderer.as_mut()?;
++        if renderer.shader_pack_dimension() != Some(dimension) || !renderer.shader_pack_warm_due() {
++            return None;
++        }
++        let pack = Pack::open(path).ok()?;
++        let folder = |(dim, id): (Dim, i32)| dimension_folder_named(&pack, dim.id(), id);
++        let others: Vec<((Dim, i32), String)> = DIMENSIONS
++            .iter()
++            .filter(|(dim, _)| *dim != current)
++            .map(|&d| (d, folder(d)))
++            .collect();
++        renderer.pick_shader_pack_warm(&folder((current, dimension)), &others)
++    }
++
+     /// Loads the pack for the current dimension when it changed, and returns this frame's
+     /// inputs to the pack's uniforms.
+     pub(super) fn shader_pack_inputs(
+@@ -286,11 +312,18 @@ impl Game<'_> {
+         // Cached for the particle view cull, which reads it each frame.
+         self.native_shaders.native = (dev_pack().is_none() && selected.starts_with("horizon:"))
+             || horizon_shader_api::package::is_pack(&path);
++        // Another dimension's folder to build in the background, only to warm the driver's shader
++        // cache for the next change of dimension (gfx/pack_warm.rs).
++        let warm = if self.native_shaders.native {
++            None
++        } else {
++            self.next_pack_warm(&path, dimension)
++        };
+         if self.native_shaders.native {
+             // One of Horizon's own packs (game/native_shaders.rs).
+             self.tick_native_shader_pack(&path);
+         } else if let Some(renderer) = &mut self.renderer
+-            && renderer.shader_pack_dimension() != Some(dimension)
++            && (renderer.shader_pack_dimension() != Some(dimension) || warm.is_some())
+         {
+             let name = name.as_str();
+             let started = std::time::Instant::now();
+@@ -299,6 +332,7 @@ impl Game<'_> {
+             let loaded = horizon_client::crash::contain(|| {
+                 match Pack::open(&path).map(|p| p.with_chosen(chosen_shader_options(name))) {
+                     Ok(pack) => {
++                        let (dim, dimension) = warm.unwrap_or((self.dim, dimension));
+                         let mut macros = Macros::standard();
+                         renderer.define_pack_macros(&mut macros);
+                         // Its conditionals test the pack's options too.
+@@ -328,7 +362,7 @@ impl Game<'_> {
+                                 })
+                                 .collect(),
+                         );
+-                        let folder = dimension_folder_named(&pack, self.dim.id(), dimension);
++                        let folder = dimension_folder_named(&pack, dim.id(), dimension);
+                         let inputs = renderer.pack_inputs();
+                         let mut post = load_post(&pack, &folder, &properties, &macros, &inputs);
+                         // Textures that name one of the game's: from the resource packs over
+@@ -344,63 +378,81 @@ impl Game<'_> {
+                         let names: Vec<&str> =
+                             biomes.list.iter().map(|b| b.name.as_str()).collect();
+                         post.custom.set_biomes(&names);
+-                        let text = pack.read_text("block.properties").unwrap_or_default();
+-                        let ids = BlockIds::parse(&Properties::parse(&text, &macros));
+-                        for note in &ids.notes {
+-                            log::warn!("shader pack {name}: block.properties: {note}");
+-                        }
+-                        let text = pack.read_text("entity.properties");
+-                        let entities = BlockIds::parse_kind(
+-                            &Properties::parse(text.as_deref().unwrap_or_default(), &macros),
+-                            "entity",
+-                        );
+-                        let text = pack.read_text("item.properties");
+-                        let items = BlockIds::parse_kind(
+-                            &Properties::parse(text.as_deref().unwrap_or_default(), &macros),
+-                            "item",
+-                        );
+-                        let block_items =
+-                            block_item_ids(self.res.facts(), self.pack.assets.registry, &ids);
+-                        self.pack_ids = Some(PackIds {
+-                            block_items,
+-                            item_file: text.is_some(),
+-                            items: items.plain(),
+-                            missing_item: if text.is_some() { -1 } else { 0 },
+-                            // OQ-21: on unless the pack turns it off.
+-                            old_hand_light: properties
+-                                .get("oldHandLight")
+-                                .is_none_or(|v| v.trim() != "false"),
+-                            // On unless the pack turns it off (`vignette=false`).
+-                            vignette: properties
+-                                .get("vignette")
+-                                .is_none_or(|v| v.trim() != "false"),
+-                            // Off unless the pack turns it on (Iris shades no faces by default).
+-                            old_lighting: properties
+-                                .get("oldLighting")
+-                                .is_some_and(|v| v.trim() == "true"),
+-                            separate_ao,
+-                            entities: entities.plain(),
+-                            missing_entity: if text.is_some() { 65535 } else { 0 },
+-                            missing_block: if ids.is_empty() { 0 } else { 65535 },
+-                            blocks: ids.clone(),
+-                            block_states: RefCell::default(),
+-                        });
+-                        let started_ids = std::time::Instant::now();
+-                        let table = terrain_table(
+-                            &block_id_table(&self.pack, &ids),
+-                            &block_emission_table(&self.pack),
+-                        );
+-                        log::info!(
+-                            "shader pack {name}: mc_Entity for {} of {} block sprites in {} ms",
+-                            table.chunks(3).filter(|p| p[0] != -1).count(),
+-                            table.len() / 3,
+-                            started_ids.elapsed().as_millis()
+-                        );
++                        // A warm-up builds pipelines only, which don't depend on `mc_Entity`'s
++                        // table (`PackPost::block_ids` takes any length, an empty one as one empty
++                        // row) or on the item and block ids: it skips them, which keeps the
++                        // running dimension's ids and ~0.1 s of the main thread.
++                        let table = if warm.is_some() {
++                            Vec::new()
++                        } else {
++                            let text = pack.read_text("block.properties").unwrap_or_default();
++                            let ids = BlockIds::parse(&Properties::parse(&text, &macros));
++                            for note in &ids.notes {
++                                log::warn!("shader pack {name}: block.properties: {note}");
++                            }
++                            let text = pack.read_text("entity.properties");
++                            let entities = BlockIds::parse_kind(
++                                &Properties::parse(text.as_deref().unwrap_or_default(), &macros),
++                                "entity",
++                            );
++                            let text = pack.read_text("item.properties");
++                            let items = BlockIds::parse_kind(
++                                &Properties::parse(text.as_deref().unwrap_or_default(), &macros),
++                                "item",
++                            );
++                            let block_items =
++                                block_item_ids(self.res.facts(), self.pack.assets.registry, &ids);
++                            self.pack_ids = Some(PackIds {
++                                block_items,
++                                item_file: text.is_some(),
++                                items: items.plain(),
++                                missing_item: if text.is_some() { -1 } else { 0 },
++                                // OQ-21: on unless the pack turns it off.
++                                old_hand_light: properties
++                                    .get("oldHandLight")
++                                    .is_none_or(|v| v.trim() != "false"),
++                                // On unless the pack turns it off (`vignette=false`).
++                                vignette: properties
++                                    .get("vignette")
++                                    .is_none_or(|v| v.trim() != "false"),
++                                // Off unless the pack turns it on (Iris shades no faces by default).
++                                old_lighting: properties
++                                    .get("oldLighting")
++                                    .is_some_and(|v| v.trim() == "true"),
++                                separate_ao,
++                                entities: entities.plain(),
++                                missing_entity: if text.is_some() { 65535 } else { 0 },
++                                missing_block: if ids.is_empty() { 0 } else { 65535 },
++                                blocks: ids.clone(),
++                                block_states: RefCell::default(),
++                            });
++                            let started_ids = std::time::Instant::now();
++                            let table = terrain_table(
++                                &block_id_table(&self.pack, &ids),
++                                &block_emission_table(&self.pack),
++                            );
++                            log::info!(
++                                "shader pack {name}: mc_Entity for {} of {} block sprites in {} ms",
++                                table.chunks(3).filter(|p| p[0] != -1).count(),
++                                table.len() / 3,
++                                started_ids.elapsed().as_millis()
++                            );
++                            table
++                        };
+                         log::info!("shader pack {name}: folder `{folder}`, building its pipelines");
+                         // The driver compiles the programs on a thread of their own; the game
+                         // draws without a pack meanwhile, and the next frames pick it up.
+-                        renderer.load_shader_pack(dimension, post, table, name.to_owned(), started);
++                        renderer.load_shader_pack(
++                            dimension,
++                            post,
++                            table,
++                            name.to_owned(),
++                            started,
++                            warm.is_some(),
++                        );
+                     }
++                    // A warm-up that can't start leaves the running pack alone.
++                    Err(_) if warm.is_some() => {}
+                     Err(e) => {
+                         self.pack_ids = None;
+                         log::warn!("shader pack {name}: {e}");
+@@ -411,7 +463,9 @@ impl Game<'_> {
+                 Ok(())
+             });
+             // A pack that can't run is turned off like one that panics.
+-            if let Err(error) = loaded.flatten() {
++            if let Err(error) = loaded.flatten()
++                && warm.is_none()
++            {
+                 self.shader_pack_failed(name, dimension, &error);
+             }
+         }
+-- 
+2.54.0 (Apple Git-157)
+

@@ -1,0 +1,79 @@
+diff --git a/crates/horizon-client/src/mobs/cem.rs b/crates/horizon-client/src/mobs/cem.rs
+index 58a3d68..fa0e5bd 100644
+--- a/crates/horizon-client/src/mobs/cem.rs
++++ b/crates/horizon-client/src/mobs/cem.rs
+@@ -661,9 +661,24 @@ impl CemLayer {
+             entries.push((this, target, p.animations.as_slice()));
+             node.children.push(bone);
+         }
++        // A submodel's own id beats a vanilla alias of the same name: Fresh Animations' ravager
++        // keeps its legs as submodels `back_left_leg`.. under `legs`, while `back_left_leg` is
++        // also the alias of the vanilla `left_hind_leg`, which would take every leg write.
++        let mut sub_ids = std::collections::HashSet::new();
++        for p in &jem.parts {
++            for c in &p.bone.children {
++                collect_ids(c, &mut sub_ids);
++            }
++        }
++        let top_names: std::collections::HashSet<&str> = jem
++            .parts
++            .iter()
++            .flat_map(|p| [Some(p.part.as_str()), p.bone.id.as_deref()])
++            .flatten()
++            .collect();
+         let names = super::cem_anim::Names {
+             model: &out,
+-            vanilla: &|p| vanilla_part(&model, p),
++            vanilla: &|p| animation_target(&model, p, &sub_ids, &top_names),
+             ids: &ids,
+         };
+         let animation = super::cem_anim::compile_animation(name, &names, &entries, rules);
+@@ -677,6 +692,28 @@ impl CemLayer {
+     }
+ }
+ 
++/// The part an animation target `part` of model `model` names: the vanilla part it aliases,
++/// unless it is a submodel's id and no top-level entry carries the name.
++fn animation_target(
++    model: &str,
++    part: &str,
++    sub_ids: &std::collections::HashSet<&str>,
++    top_names: &std::collections::HashSet<&str>,
++) -> String {
++    let vanilla = vanilla_part(model, part);
++    if vanilla != part && sub_ids.contains(part) && !top_names.contains(part) {
++        part.to_owned()
++    } else {
++        vanilla
++    }
++}
++/// The ids of `bone` and of every bone below it.
++fn collect_ids<'a>(bone: &'a Bone, out: &mut std::collections::HashSet<&'a str>) {
++    out.extend(bone.id.as_deref());
++    for c in &bone.children {
++        collect_ids(c, out);
++    }
++}
+ /// The first part named `name`, depth first (`ModelPart.getChild` through the tree).
+ fn find_mut<'a>(part: &'a mut Part, name: &str) -> Option<&'a mut Part> {
+     if part.name == name {
+@@ -832,6 +869,19 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn a_submodel_id_beats_a_vanilla_alias_unless_a_top_level_entry_has_the_name() {
++        use std::collections::HashSet;
++        let sub: HashSet<&str> = ["back_left_leg", "tentacle_1"].into();
++        let top: HashSet<&str> = ["body", "leg3"].into();
++        // Fresh Animations' ravager: `back_left_leg` is a submodel under `legs`.
++        assert_eq!(animation_target("ravager", "back_left_leg", &sub, &top), "back_left_leg");
++        // Vanilla names, ids that are no alias and top-level parts keep resolving as before.
++        assert_eq!(animation_target("ravager", "leg3", &sub, &top), "right_front_leg");
++        assert_eq!(animation_target("ghast", "tentacle_1", &sub, &top), "tentacle_1");
++        let top: HashSet<&str> = ["back_left_leg"].into();
++        assert_eq!(animation_target("camel", "back_left_leg", &sub, &top), "left_hind_leg");
++    }
+     #[test]
+     fn random_model_rules_feed_rule_index() {
+         // Fresh Animations' cow: rule 2 grazes on grass, wheat or hay.

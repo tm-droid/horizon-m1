@@ -1,0 +1,338 @@
+diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+index 363d00e..28a2d69 100644
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -3299,15 +3299,18 @@ impl Renderer {
+             .filter(|a| a.has_materials())
+             .cloned()
+             .collect();
++        let sprite_animations = animations;
+         let animations = animate::SpriteAnimator::new(
+             &device,
+-            animations,
++            sprite_animations,
+             sprite_size,
+             sprite_mips,
+             &sprite_textures,
+             split,
+             animate::SpriteAnimator::compute(&adapter, &device),
+         );
++        // The GPU animator has its mip chains; keep the shared CPU colour frames compressed.
++        crate::sprites::pack_animations(sprite_animations);
+         let active_layer_words = animations.active_layer_words();
+         let sprite_unused = device
+             .create_texture(&wgpu::TextureDescriptor {
+@@ -14075,7 +14078,7 @@ mod sprite_upload_tests {
+     fn mip_chain_allocates_exactly_its_size() {
+         for size in [16, 64] {
+             let animation = crate::sprites::test_animation(size, 0);
+-            let (chain, _) = mip_chain(animation.pixels(0), size, &[], 0, 1);
++            let (chain, _) = mip_chain(&animation.pixels(0), size, &[], 0, 1);
+             assert_eq!(chain.capacity(), chain.len());
+         }
+     }
+diff --git a/crates/horizon-client-render/src/gfx/animate.rs b/crates/horizon-client-render/src/gfx/animate.rs
+index 324e72a..916ebf0 100644
+--- a/crates/horizon-client-render/src/gfx/animate.rs
++++ b/crates/horizon-client-render/src/gfx/animate.rs
+@@ -105,9 +105,8 @@ impl SpriteAnimator {
+         let mut counts: Vec<usize> = Vec::new();
+         let mut sprites = Vec::with_capacity(animations.len());
+         for animation in animations {
+-            let pixels: Vec<_> = (0..animation.frame_count())
+-                .map(|frame| animation.pixels(frame))
+-                .collect();
++            let sheet = animation.frames();
++            let pixels: Vec<&[u8]> = sheet.iter().map(Vec::as_slice).collect();
+             let (chains, edge) = source_chains(&pixels, size, settings, animation.layer);
+             let bytes: u64 = chains.iter().map(|chain| chain.len() as u64).sum();
+             if bytes > limit {
+@@ -648,7 +647,7 @@ mod tests {
+         assert_eq!(sprites.animations.len(), 9);
+         for animation in &sprites.animations {
+             for frame in 0..animation.frame_count() {
+-                let pixels = animation.pixels(frame);
++                let pixels = &animation.pixels(frame);
+                 let (expected, _) =
+                     super::super::mip_chain(pixels, 64, &sprites.mips, animation.layer, 1);
+                 let (chain, edge) = source_chain(pixels, 64, &sprites.mips, animation.layer);
+@@ -693,9 +692,8 @@ mod tests {
+         let mut blinked = 0;
+         for animation in &sprites.animations {
+             let size = sprites.size;
+-            let pixels: Vec<_> = (0..animation.frame_count())
+-                .map(|f| animation.pixels(f))
+-                .collect();
++            let sheet = animation.frames();
++            let pixels: Vec<&[u8]> = sheet.iter().map(Vec::as_slice).collect();
+             let (chains, edge) = source_chains(&pixels, size, &sprites.mips, animation.layer);
+             for (frame, chain) in chains.iter().enumerate() {
+                 // The 1x1 level has no texel square to measure coverage on
+@@ -873,9 +871,8 @@ mod tests {
+             queue.submit([encoder.finish()]);
+             for animation in &animations {
+                 let blend = animation.blend(tick);
+-                let pixels: Vec<_> = (0..animation.frame_count())
+-                    .map(|f| animation.pixels(f))
+-                    .collect();
++                let sheet = animation.frames();
++                let pixels: Vec<&[u8]> = sheet.iter().map(Vec::as_slice).collect();
+                 let (chains, edge) = source_chains(&pixels, size, &mips, animation.layer);
+                 let (current, next) = (&chains[blend.frame], &chains[blend.next]);
+                 let layers = read_back(
+diff --git a/crates/horizon-client-render/src/sprites.rs b/crates/horizon-client-render/src/sprites.rs
+index 756099c..e06bb4e 100644
+--- a/crates/horizon-client-render/src/sprites.rs
++++ b/crates/horizon-client-render/src/sprites.rs
+@@ -6,10 +6,99 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
+ #[derive(Clone)]
+ pub struct SpriteAnimation {
+     pub layer: u32,
+-    frames: Arc<Vec<Vec<u8>>>,
++    frames: Arc<AnimationFrames>,
+     clip: Arc<AnimationClip>,
+     materials: [Option<Arc<Vec<Vec<u8>>>>; 2],
+ }
++/// An animated sprite's frames at the array's layer size. Once a renderer has built its
++/// sprite animator ([`pack_animations`]) they are kept lz4-compressed (upscaled sprites are
++/// runs of equal texels, so they shrink a lot): the GPU holds every frame's mip chain, and the
++/// copy only serves a renderer made again, which waits for [`Self::get`] to uncompress them.
++/// Shared by every clone of the animation (the animator's included), so packing frees the one
++/// copy.
++struct AnimationFrames {
++    /// Each frame's length in bytes.
++    lens: Vec<usize>,
++    /// Set by the first claim: later calls cost one atomic read.
++    packing: std::sync::atomic::AtomicBool,
++    /// As built; dropped once `packed` holds them.
++    raw: std::sync::Mutex<Option<Arc<Vec<Vec<u8>>>>>,
++    /// Every frame one after the other, as one lz4 block.
++    packed: std::sync::OnceLock<Vec<u8>>,
++}
++impl AnimationFrames {
++    fn new(frames: Arc<Vec<Vec<u8>>>) -> Self {
++        Self {
++            lens: frames.iter().map(Vec::len).collect(),
++            packing: std::sync::atomic::AtomicBool::new(false),
++            raw: std::sync::Mutex::new(Some(frames)),
++            packed: std::sync::OnceLock::new(),
++        }
++    }
++    /// The frames as built, uncompressed again once packed.
++    fn get(&self) -> Arc<Vec<Vec<u8>>> {
++        let raw = self.raw.lock().unwrap_or_else(|e| e.into_inner()).clone();
++        raw.unwrap_or_else(|| {
++            let total: usize = self.lens.iter().sum();
++            let packed = self.packed.get().map(Vec::as_slice).unwrap_or_default();
++            let all = lz4_flex::decompress_size_prepended(packed)
++                .ok()
++                .filter(|all| all.len() == total)
++                .unwrap_or_else(|| vec![0; total]);
++            let mut at = 0;
++            Arc::new(
++                self.lens
++                    .iter()
++                    .map(|&len| {
++                        at += len;
++                        all[at - len..at].to_vec()
++                    })
++                    .collect(),
++            )
++        })
++    }
++    /// True for the first caller only.
++    fn claim(&self) -> bool {
++        !self.packing.swap(true, std::sync::atomic::Ordering::Relaxed)
++    }
++    fn pack(&self) {
++        let raw = self.raw.lock().unwrap_or_else(|e| e.into_inner()).clone();
++        if let Some(raw) = raw {
++            let all: Vec<u8> = raw.iter().flatten().copied().collect();
++            let mut packed = lz4_flex::compress_prepend_size(&all);
++            packed.shrink_to_fit();
++            let _ = self.packed.set(packed);
++            // `get` reads the compressed copy from here on.
++            *self.raw.lock().unwrap_or_else(|e| e.into_inner()) = None;
++        }
++    }
++}
++/// Keep these animations' frames compressed from now on, once a renderer has taken them:
++/// packed one after the other on a thread of their own, the raw copies dropped as each is done.
++/// Cheap to call again: only frames not claimed before are packed.
++pub fn pack_animations(animations: &[SpriteAnimation]) {
++    let jobs: Vec<Arc<AnimationFrames>> = animations
++        .iter()
++        .map(|animation| animation.frames.clone())
++        .filter(|frames| frames.claim())
++        .collect();
++    if jobs.is_empty() {
++        return;
++    }
++    let job = move || {
++        for frames in &jobs {
++            frames.pack();
++        }
++    };
++    let fallback = job.clone();
++    if std::thread::Builder::new()
++        .name("Animation packing".into())
++        .spawn(job)
++        .is_err()
++    {
++        fallback();
++    }
++}
+ /// What an animated sprite shows: `frame`, mixed `millis` thousandths of the
+ /// way towards `next` (0 for a single frame).
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+@@ -52,7 +141,9 @@ impl SpriteAnimation {
+         }
+     }
+     pub fn resized_pixels(&self, frame: usize, width: u32, height: u32) -> Vec<u8> {
+-        let source = self.pixels(frame);
++        // Read through the shared store: `pixels` would copy the frame out after the decode.
++        let frames = self.frames.get();
++        let source = &frames[frame];
+         let side = (source.len() / 4).isqrt() as u32;
+         let mut out = Vec::with_capacity((width * height * 4) as usize);
+         for y in 0..height {
+@@ -63,11 +154,16 @@ impl SpriteAnimation {
+         }
+         out
+     }
+-    pub fn pixels(&self, frame: usize) -> &[u8] {
+-        &self.frames[frame]
++    /// One frame's RGBA: a copy, uncompressed again if packed ([`Self::frames`] for several).
++    pub fn pixels(&self, frame: usize) -> Vec<u8> {
++        self.frames.get()[frame].clone()
++    }
++    /// Every frame's RGBA, uncompressed again if packed.
++    pub fn frames(&self) -> Arc<Vec<Vec<u8>>> {
++        self.frames.get()
+     }
+     pub fn frame_count(&self) -> usize {
+-        self.frames.len()
++        self.frames.lens.len()
+     }
+ }
+ 
+@@ -275,7 +371,9 @@ impl Sprites {
+             resized.push(frames);
+         }
+         for animation in &mut self.animations {
+-            animation.frames = resized[animation.layer as usize].clone();
++            animation.frames = Arc::new(AnimationFrames::new(
++                resized[animation.layer as usize].clone(),
++            ));
+         }
+         self.size = size;
+         self.normals.clear();
+@@ -703,7 +801,7 @@ impl Sprites {
+             initial = clip.sample(0).frame as usize;
+             self.animations.push(SpriteAnimation {
+                 layer,
+-                frames: frames.clone(),
++                frames: Arc::new(AnimationFrames::new(frames.clone())),
+                 clip: Arc::new(clip),
+                 materials: [None, None],
+             });
+@@ -836,7 +934,7 @@ pub(crate) fn test_frames(layer: u32, frames: Vec<Vec<u8>>, metadata: &str) -> S
+     SpriteAnimation {
+         layer,
+         clip: Arc::new(metadata.clip(frames.len() as u32).unwrap().unwrap()),
+-        frames: Arc::new(frames),
++        frames: Arc::new(AnimationFrames::new(Arc::new(frames))),
+         materials: [None, None],
+     }
+ }
+@@ -1386,7 +1484,7 @@ mod tests {
+         let animation = SpriteAnimation {
+             layer: 0,
+             materials: [None, None],
+-            frames: Arc::new(vec![vec![], vec![], vec![]]),
++            frames: Arc::new(AnimationFrames::new(Arc::new(vec![vec![], vec![], vec![]]))),
+             clip: Arc::new(AnimationMetadata::from_json(r#"{"frames":[{"index":2,"time":8},{"index":1,"time":3},{"index":1,"time":2},0]}"#).unwrap().clip(3).unwrap().unwrap()),
+         };
+         for (tick, frame) in [
+@@ -1428,3 +1526,81 @@ mod tests {
+         assert_eq!(stepped.blend(5), blend(1, 1, 0));
+     }
+ }
++
++#[cfg(test)]
++mod animation_frames_tests {
++    use super::*;
++
++    /// Frames as `lay_out` makes them: a `native`-px sprite scaled up by whole pixels to `size`.
++    fn upscaled(native: u32, size: u32, frames: u32) -> Vec<Vec<u8>> {
++        (0..frames)
++            .map(|f| {
++                (0..size * size)
++                    .flat_map(|i| {
++                        let (x, y) = (i % size * native / size, i / size * native / size);
++                        [x as u8, y as u8, (f * 40 + x + y) as u8, 255]
++                    })
++                    .collect()
++            })
++            .collect()
++    }
++
++    fn wait_packed(animation: &SpriteAnimation) {
++        let started = std::time::Instant::now();
++        while animation.frames.raw.lock().unwrap().is_some() {
++            assert!(started.elapsed().as_secs() < 10, "packing never finished");
++            std::thread::yield_now();
++        }
++    }
++
++    #[test]
++    fn frames_come_back_the_same_once_packed() {
++        let frames = upscaled(16, 64, 5);
++        let animation = test_frames(3, frames.clone(), r#"{"frametime":1,"frames":[0,1]}"#);
++        let before: Vec<Vec<u8>> = (0..5).map(|f| animation.pixels(f)).collect();
++        let resized = animation.resized_pixels(2, 16, 16);
++        assert_eq!(before, frames);
++        pack_animations(std::slice::from_ref(&animation));
++        wait_packed(&animation);
++        assert_eq!(animation.frame_count(), 5);
++        assert_eq!(*animation.frames(), frames);
++        assert_eq!(animation.pixels(4), frames[4]);
++        assert_eq!(animation.resized_pixels(2, 16, 16), resized);
++    }
++
++    #[test]
++    fn upscaled_frames_shrink_a_lot() {
++        let animation = test_frames(0, upscaled(16, 64, 8), r#"{"frametime":1,"frames":[0,1]}"#);
++        let raw: usize = animation.frames.lens.iter().sum();
++        pack_animations(std::slice::from_ref(&animation));
++        wait_packed(&animation);
++        let packed = animation.frames.packed.get().unwrap().len();
++        assert!(packed * 3 < raw, "{packed} of {raw} bytes");
++    }
++
++    #[test]
++    fn clones_share_one_packed_copy_and_packing_is_claimed_once() {
++        let animation = test_frames(1, upscaled(16, 32, 3), r#"{"frametime":1,"frames":[0,1]}"#);
++        let copy = SpriteAnimation { layer: 9, ..animation.clone() };
++        pack_animations(std::slice::from_ref(&animation));
++        // Already claimed: nothing more to pack for the clone or a repeat.
++        assert!(!copy.frames.claim());
++        pack_animations(std::slice::from_ref(&copy));
++        wait_packed(&animation);
++        assert!(copy.frames.raw.lock().unwrap().is_none());
++        assert_eq!(*copy.frames(), *animation.frames());
++        assert_eq!(copy.layer, 9);
++    }
++
++    #[test]
++    fn unequal_and_empty_frame_lists_round_trip() {
++        let frames = vec![vec![1, 2, 3, 4], vec![], vec![9; 12]];
++        let store = AnimationFrames::new(Arc::new(frames.clone()));
++        store.pack();
++        assert!(store.raw.lock().unwrap().is_none());
++        assert_eq!(*store.get(), frames);
++        let none = AnimationFrames::new(Arc::new(Vec::new()));
++        none.pack();
++        assert!(none.get().is_empty());
++    }
++}

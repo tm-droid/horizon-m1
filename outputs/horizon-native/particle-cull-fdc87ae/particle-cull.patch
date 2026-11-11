@@ -1,0 +1,136 @@
+diff --git a/crates/horizon-client-render/src/particles.rs b/crates/horizon-client-render/src/particles.rs
+index 6df1c48..744932d 100644
+--- a/crates/horizon-client-render/src/particles.rs
++++ b/crates/horizon-client-render/src/particles.rs
+@@ -1293,6 +1293,12 @@ const MAX_PARTICLES: usize = 16384;
+ /// `ParticleLimit.SPORE_BLOSSOM`, the only limited particle.
+ const SPORE_BLOSSOM_LIMIT: usize = 1000;
+ const PARTICLE_LIGHT_CACHE_SIZE: usize = 64;
++/// Half-extent bound of a particle's quads around their centre, for the view cull: a quad of
++/// half-size `size` reaches `sqrt(2) * size` (about 1.415) from the centre in any rotation;
++/// the extra 0.05 absorbs f32 rounding of the box test.
++fn cull_reach(size: f32) -> f32 {
++    size.abs() * 1.5 + 0.05
++}
+ 
+ #[derive(Clone, Copy)]
+ struct CachedParticleLight {
+@@ -4631,6 +4637,24 @@ impl ParticleEngine {
+         partial: f32,
+         light_at: &dyn Fn([i32; 3]) -> u8,
+         out: &mut Vec<Vertex>,
++    ) {
++        self.render_in_view(camera, yaw, pitch, partial, light_at, &|_, _| true, out);
++    }
++
++    /// `render`, skipping a particle whose quads cannot reach the view: `in_view(min, max)` tests
++    /// the camera-relative box around the particle's centre. Skipped particles still simulate
++    /// (this reads them only), and the quads kept keep their order, so translucent layering is
++    /// the same as drawing every particle.
++    #[allow(clippy::too_many_arguments)]
++    pub fn render_in_view(
++        &self,
++        camera: DVec3,
++        yaw: f32,
++        pitch: f32,
++        partial: f32,
++        light_at: &dyn Fn([i32; 3]) -> u8,
++        in_view: &dyn Fn(FVec3, FVec3) -> bool,
++        out: &mut Vec<Vertex>,
+     ) {
+         self.render_inner::<false>(
+             camera,
+@@ -4640,6 +4664,7 @@ impl ParticleEngine {
+             0.0,
+             None,
+             &mut |_, _| false,
++            in_view,
+             light_at,
+             out,
+         );
+@@ -4672,6 +4697,7 @@ impl ParticleEngine {
+             pixel_focal_length,
+             frustum,
+             &mut occluded,
++            &|_, _| true,
+             light_at,
+             out,
+         );
+@@ -4686,6 +4712,7 @@ impl ParticleEngine {
+         pixel_focal_length: f32,
+         frustum: Option<&crate::gfx::Frustum>,
+         occluded: &mut dyn FnMut([f64; 3], [f64; 3]) -> bool,
++        in_view: &dyn Fn(FVec3, FVec3) -> bool,
+         light_at: &dyn Fn([i32; 3]) -> u8,
+         out: &mut Vec<Vertex>,
+     ) {
+@@ -4764,6 +4791,10 @@ impl ParticleEngine {
+                 ) - camera;
+                 (pos.as_vec3(), p.quad_size(partial))
+             });
++            let reach = FVec3::splat(cull_reach(size));
++            if !CULL && !in_view(center - reach, center + reach) {
++                continue;
++            }
+             let rotation = if p.roll != 0.0 {
+                 base * Quat::from_rotation_z(p.o_roll + (p.roll - p.o_roll) * partial)
+             } else {
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+index 5f9f91d..358cd7a 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -11486,12 +11486,21 @@ impl Game<'_> {
+         let world = &self.world;
+         let particle_mode = self.settings.horizon.particle_culling;
+         if particle_mode == horizon_client::graphics::ParticleCullingMode::Off {
+-            self.particles.render(
++            // A native shader pack draws these quads into its shadow maps too: keep them all then.
++            // `native_shaders.native` is set by the last frame's `shader_pack_inputs`, so the
++            // per-frame path/stat lookups are not repeated here.
++            let view = if self.native_shaders.native {
++                None
++            } else {
++                self.view_frustum
++            };
++            self.particles.render_in_view(
+                 camera,
+                 self.yaw,
+                 self.pitch,
+                 alpha as f32,
+                 &|b| world.light(b[0], b[1], b[2]),
++                &|min, max| view.is_none_or(|v| v.intersects(min, max)),
+                 &mut out,
+             );
+         } else {
+diff --git a/crates/horizon-client/src/game/native_shaders.rs b/crates/horizon-client/src/game/native_shaders.rs
+index 0d49926..baf95b1 100644
+--- a/crates/horizon-client/src/game/native_shaders.rs
++++ b/crates/horizon-client/src/game/native_shaders.rs
+@@ -23,6 +23,9 @@ const RED: u32 = 0xFF5555;
+ pub(super) struct NativeShaders {
+     /// The resolved pack path, of either kind (`game/shader_packs.rs`); empty: none.
+     pub picked: String,
++    /// `picked` is one of Horizon's own packs (not a `shaders/` pack): set each frame by
++    /// `shader_pack_inputs`, false until it first runs for a new pick.
++    pub native: bool,
+     /// The pack's files when it was last read (`fingerprint`).
+     stamp: Option<u64>,
+     looked: Option<Instant>,
+diff --git a/crates/horizon-client/src/game/shader_packs.rs b/crates/horizon-client/src/game/shader_packs.rs
+index 5d9385e..9ac36a7 100644
+--- a/crates/horizon-client/src/game/shader_packs.rs
++++ b/crates/horizon-client/src/game/shader_packs.rs
+@@ -283,9 +283,10 @@ impl Game<'_> {
+             Dim::Nether => -1,
+             Dim::End => 1,
+         };
+-        if (dev_pack().is_none() && selected.starts_with("horizon:"))
+-            || horizon_shader_api::package::is_pack(&path)
+-        {
++        // Cached for the particle view cull, which reads it each frame.
++        self.native_shaders.native = (dev_pack().is_none() && selected.starts_with("horizon:"))
++            || horizon_shader_api::package::is_pack(&path);
++        if self.native_shaders.native {
+             // One of Horizon's own packs (game/native_shaders.rs).
+             self.tick_native_shader_pack(&path);
+         } else if let Some(renderer) = &mut self.renderer

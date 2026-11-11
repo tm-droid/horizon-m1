@@ -1,0 +1,165 @@
+--- a/crates/horizon-client-render/src/block_entity_render.rs
++++ b/crates/horizon-client-render/src/block_entity_render.rs
+@@ -1010,6 +1010,8 @@
+     pub revision: u64,
+     pub entities: u32,
+     pub vertices: Arc<[Vertex]>,
++    /// Complete world-space geometry, including cross-section overhangs.
++    pub occlusion_bounds: Option<([f64; 3], [f64; 3])>,
+ }
+ #[derive(Clone, Copy, Debug, Default)]
+ pub struct StaticCacheFrameStats {
+@@ -1188,6 +1190,10 @@
+                     origin: [section[0] * 16, min_y + section[1] * 16, section[2] * 16],
+                     revision: geometry.revision,
+                     entities: geometry.entities,
++                    occlusion_bounds: cached_static_occlusion_bounds(
++                        [section[0] * 16, min_y + section[1] * 16, section[2] * 16],
++                        &geometry.vertices,
++                    ),
+                     vertices: geometry.vertices.clone(),
+                 })
+                 .collect::<Vec<_>>();
+@@ -1211,6 +1217,70 @@
+         )
+     }
+ }
++fn cached_static_occlusion_bounds(
++    origin: [i32; 3],
++    vertices: &[Vertex],
++) -> Option<([f64; 3], [f64; 3])> {
++    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    if !*ENABLED.get_or_init(|| {
++        std::env::var("HORIZON_BE_OCCLUSION_CACHE").as_deref() == Ok("1")
++    }) {
++        return None;
++    }
++    static_occlusion_bounds(origin, vertices)
++}
++
++/// Match the existing entity culler's edge margin, without assuming block-sized models.
++fn static_occlusion_bounds(
++    origin: [i32; 3],
++    vertices: &[Vertex],
++) -> Option<([f64; 3], [f64; 3])> {
++    if vertices.is_empty() {
++        return None;
++    }
++    let mut min = [f64::INFINITY; 3];
++    let mut max = [f64::NEG_INFINITY; 3];
++    for vertex in vertices {
++        for axis in 0..3 {
++            let value = f64::from(origin[axis]) + f64::from(vertex.pos[axis]);
++            if !value.is_finite() {
++                return None;
++            }
++            min[axis] = min[axis].min(value);
++            max[axis] = max[axis].max(value);
++        }
++    }
++    Some((min.map(|v| v - 0.05), max.map(|v| v + 0.05)))
++}
++
++#[cfg(test)]
++mod static_occlusion_bounds_tests {
++    use super::*;
++
++    fn vertex(pos: [f32; 3]) -> Vertex {
++        Vertex {
++            pos,
++            ..bytemuck::Zeroable::zeroed()
++        }
++    }
++
++    #[test]
++    fn includes_overhangs_and_negative_section_origins() {
++        let vertices = [vertex([-2.0, 0.0, 15.0]), vertex([18.0, 19.0, 17.0])];
++        let (min, max) = static_occlusion_bounds([-32, -64, -16], &vertices).unwrap();
++        assert_eq!(min, [-34.05, -64.05, -1.05]);
++        assert_eq!(max, [-13.95, -44.95, 1.05]);
++    }
++
++    #[test]
++    fn invalid_or_empty_geometry_has_no_occlusion_proof() {
++        assert!(static_occlusion_bounds([0; 3], &[]).is_none());
++        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
++            assert!(static_occlusion_bounds([0; 3], &[vertex([invalid, 0.0, 0.0])]).is_none());
++        }
++    }
++}
++
+ fn sprite_rect_key(scene: &Scene, texture: &str) -> Option<[u32; 6]> {
+     scene.sprites.get(texture).copied().map(|sprite| {
+         [
+--- a/crates/horizon-client/src/game/entity_culling.rs
++++ b/crates/horizon-client/src/game/entity_culling.rs
+@@ -468,6 +468,45 @@
+         hidden
+     }
+ 
++    /// Hide only section draw IDs: the complete CPU/GPU cache catalog stays resident.
++    pub(super) fn cull_cached_block_entity_sections(
++        &self,
++        snapshots: &[super::StaticSectionSnapshot],
++        visible: &mut Vec<[i32; 3]>,
++    ) -> bool {
++        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++        if !*ENABLED.get_or_init(|| {
++            std::env::var("HORIZON_BE_OCCLUSION_CACHE").as_deref() == Ok("1")
++        }) || self.pack_ids.is_some()
++            || self.renderer.as_ref().is_none_or(|r| r.native_shadow())
++        {
++            return false;
++        }
++        // This culler already enforces vanilla models, a valid player/camera,
++        // and same-frame opaque uploaded occluders. Async results are not reused.
++        let Some(culler) = &self.entity_culler else {
++            return false;
++        };
++        visible.retain(|section| {
++            let Ok(index) = snapshots.binary_search_by_key(section, |s| s.section) else {
++                return true;
++            };
++            let Some((min, max)) = snapshots[index].occlusion_bounds else {
++                return true;
++            };
++            // Keep the GPU's camera-relative f32 arithmetic well within the
++            // 0.05 edge margin, including arbitrarily oversized cached models.
++            if (0..3).any(|axis| {
++                (min[axis] - culler.camera[axis]).abs() > 512.0
++                    || (max[axis] - culler.camera[axis]).abs() > 512.0
++            }) {
++                return true;
++            }
++            !culler.occluded(min, max, |pos| self.occluder_ready(pos))
++        });
++        true
++    }
++
+     fn async_proof_is_current(&self, proof: &OcclusionProof) -> bool {
+         for (key, expected) in &proof.chunks {
+             let Some(current) = self.world.chunks.get(key) else {
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -10727,6 +10727,21 @@
+                         &mut out,
+                     );
+             }
++            if self.cull_cached_block_entity_sections(
++                &static_block_entities,
++                &mut visible_static_block_entity_sections,
++            ) {
++                static_block_entity_stats.static_entities_drawn =
++                    visible_static_block_entity_sections
++                        .iter()
++                        .filter_map(|section| {
++                            static_block_entities
++                                .binary_search_by_key(section, |snapshot| snapshot.section)
++                                .ok()
++                                .map(|index| u64::from(static_block_entities[index].entities))
++                        })
++                        .sum();
++            }
+             let mods = self
+                 .world
+                 .block_entities

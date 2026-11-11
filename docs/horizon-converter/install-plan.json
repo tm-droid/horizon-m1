@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "schema_owner": "local preparation plan; not a Horizon API",
+  "researched_on": "2026-11-02",
+  "status": "prepared-not-executed",
+  "precondition": "converter improvements and their checks completed",
+  "research_horizon_revision": "e6e12d40c522b8f5ee8740dd861c96689023737a",
+  "root_relative_to_workspace": "outputs/horizon-runtime",
+  "launcher": {
+    "tag": "launcher@0.2.37",
+    "commit": "c1f308fe62beec70cee597b0483f1e0ee172844c",
+    "asset_id": 701038214,
+    "asset": "horizon-launcher-macos-arm64.zip",
+    "url": "https://github.com/horizon-rust/horizon/releases/download/launcher%400.2.37/horizon-launcher-macos-arm64.zip",
+    "expected_size": 14547266,
+    "expected_sha256": "e3e8a21f229d8b64602a6ce64c21e2d2fddffa4129cb10168aa0d5d51985b227",
+    "digest_source": "https://api.github.com/repos/horizon-rust/horizon/releases/assets/701038214",
+    "download_relative": "downloads/horizon-launcher-macos-arm64.zip",
+    "extract_relative": "launcher-app",
+    "executable_relative": null,
+    "executable_note": "Inspect ZIP entries after hash verification; do not assume app bundle layout."
+  },
+  "optional_stable_game_reference": {
+    "tag": "v0.2.97",
+    "commit": "a3acb5f0d2f59d2d5ff21a5aa000809ba1e35e2f",
+    "asset_id": 686319521,
+    "asset": "horizon-macos-arm64.zip",
+    "url": "https://github.com/horizon-rust/horizon/releases/download/v0.2.97/horizon-macos-arm64.zip",
+    "expected_size": 29490171,
+    "expected_sha256": "587fb8a653324e6f1b3bf59f1f2227ad99201ccaaf3f31024db25ccd4f37c63e",
+    "digest_source": "https://api.github.com/repos/horizon-rust/horizon/releases/assets/686319521",
+    "selected_for_automatic_install": false,
+    "note": "Different from research target; runtime source compatibility requires separate verification."
+  },
+  "environment_relative_paths": {
+    "HORIZON_LAUNCHER_HOME": "launcher-data",
+    "HORIZON_HOME": "game",
+    "XDG_DATA_HOME": "xdg/data",
+    "XDG_CONFIG_HOME": "xdg/config"
+  },
+  "environment_literals": {"HORIZON_LAUNCHER_NO_SELF_UPDATE": "1"},
+  "environment_must_preserve": ["HOME", "CODEX_HOME"],
+  "allowed_staging": ["download pinned official launcher ZIP", "verify size and SHA-256", "inspect archive paths", "extract within root", "inspect executable architecture and help"],
+  "not_to_execute_in_this_plan": ["game launch", "benchmark", "native game build", "resource preparation", "default storage writes", "original instance edits", "save imports"],
+  "native_zoom": {
+    "source_repository": "https://github.com/horizon-rust/horizon-mods",
+    "source_revision": "245ab9b4f6108ca9dc5a7184fe6a3b7e06a1eb1d",
+    "source_subtree": "native/zoom",
+    "upstream_version": "2.0.0",
+    "original_horizon_revision": "6f8c7a0e5d531d3834c4d0be4659a1db8e7e5c2a",
+    "mixins_revision": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
+    "license": "MIT",
+    "status": "source adaptation pending; not a functioning full Zoomify port",
+    "instructions": "zoomify-pilot.md"
+  },
+  "verification": {
+    "release_metadata": "GitHub official releases API read; expected digests are publisher metadata",
+    "local_download_digest": "not checked; no binary downloaded by research unit",
+    "source_hooks": "inspected at research pin",
+    "game_compilation": "not run",
+    "game_behavior": "not run"
+  }
+}

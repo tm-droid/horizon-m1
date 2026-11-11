@@ -1,0 +1,49 @@
+--- a/crates/horizon-client/src/mobs/cem.rs
++++ b/crates/horizon-client/src/mobs/cem.rs
+@@ -407,6 +407,12 @@
+ /// The vanilla part an OptiFine part name of model `model` means. Names OptiFine kept from
+ /// the game's own code map to themselves.
+ fn vanilla_part(model: &str, part: &str) -> String {
++    // Resolve exact baby exceptions before the existing adult-family normalization.
++    if (model, part) == ("villager_baby", "bodywear") {
++        return "bb_main".into();
++    }
++    let model = model.replace("_baby", "");
++    let model = model.as_str();
+     // OptiFine numbers from 1, the game from 0.
+     let n = |prefix: &str| -> Option<usize> {
+         part.strip_prefix(prefix)?.parse().ok().filter(|i| *i >= 1)
+@@ -458,6 +464,24 @@
+     ];
+     let spider = matches!(model, "spider" | "cave_spider");
+     let renamed: Option<String> = match (model, part) {
++        ("guardian" | "elder_guardian", "body") => Some("head".into()),
++        ("wolf" | "wolf_armor", "mane") => Some("upper_body".into()),
++        ("happy_ghast_harness", "body") => Some("harness".into()),
++        ("puffer_fish_small", "tail") => Some("back_fin".into()),
++        ("puffer_fish_small", "eye_right") => Some("right_eye".into()),
++        ("puffer_fish_small", "eye_left") => Some("left_eye".into()),
++        ("tropical_fish_pattern_a" | "tropical_fish_pattern_b", "fin_top") => {
++            Some("top_fin".into())
++        }
++        ("salmon" | "salmon_small" | "salmon_large", "fin_back_1") => {
++            Some("top_front_fin".into())
++        }
++        ("salmon" | "salmon_small" | "salmon_large", "fin_back_2") => {
++            Some("top_back_fin".into())
++        }
++        ("salmon" | "salmon_small" | "salmon_large", "tail") => Some("back_fin".into()),
++        ("horse_armor" | "skeleton_horse_armor", "neck") => Some("head_parts".into()),
++        ("horse_armor" | "skeleton_horse_armor", "mouth") => Some("upper_mouth".into()),
+         (_, "headwear") => Some("hat".into()),
+         (_, "back_left_leg") => Some("left_hind_leg".into()),
+         (_, "back_right_leg") => Some("right_hind_leg".into()),
+@@ -560,7 +584,7 @@
+     /// `vanilla` reshaped by `jem`, the model `name`'s file, whose random-model `rules`
+     /// feed the animations' `rule_index`.
+     fn build(vanilla: &Part, jem: &EntityModel, name: &str, rules: &[Rule]) -> Self {
+-        let model = name.replace("_baby", "");
++        let model = name;
+         let mut out = vanilla.clone();
+         let mut count = 0;
+         let mut ids = HashMap::new();

@@ -1,0 +1,132 @@
+--- a/crates/horizon-client-render/src/lod.rs
++++ b/crates/horizon-client-render/src/lod.rs
+@@ -202,6 +202,17 @@ const DETAIL_LEVEL: u8 = 2;
+ /// The most chunks one detail request asks for, one request each 250 ms:
+ /// generated ones arrive at the decoration threads' pace, cached ones at once.
+ const DETAIL_REQUEST: usize = 512;
++/// How long one frame spends applying far detail and visited summaries
++/// (`Lod::receive`).
++///
++/// Cached chunks answer a `DETAIL_REQUEST` all at once, and applying one
++/// copies the columns of every tile over it (`Arc::make_mut` on a snapshot a
++/// mesh job shares) and reduces the chunk to that tile's cell width. A whole
++/// burst in one frame cost 273 ms of it on the render thread, flying over far
++/// terrain at `lodDistance` 256: 18 FPS average, 482 ms at the 99th
++/// percentile, where the median frame was 6 ms. What the budget leaves waits
++/// in `Lod::detail_backlog` for the frames after it.
++const DETAIL_BUDGET: std::time::Duration = std::time::Duration::from_millis(3);
+ /// Top solid face and optional fluid face, in absolute block coordinates.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub struct Surface {
+@@ -1065,6 +1076,14 @@ enum Job {
+         refreshes: u64,
+     },
+ }
++/// A chunk's columns on their way to the tiles over it: what `Lod::receive`
++/// defers when a frame's [`DETAIL_BUDGET`] is spent.
++enum Summary {
++    /// A chunk's detail, and the `refreshes` of the request it answers.
++    Detail((i32, i32), ReducedColumns, u64),
++    /// A visited chunk's summary.
++    Observed((i32, i32), ReducedColumns),
++}
+ enum Done {
+     /// A chunk's detail, and the `refreshes` of the request it answers.
+     Detail((i32, i32), ReducedColumns, u64),
+@@ -1183,6 +1202,11 @@ pub struct Lod {
+     pending: FxHashSet<TileKey>,
+     detail_masks: FxHashMap<TileKey, [u64; 4]>,
+     detail_request_pending: bool,
++    /// Detail and visited summaries past a frame's [`DETAIL_BUDGET`], applied
++    /// on the frames after it. Bounded by what the worker sends: a detail
++    /// request is one per 250 ms and only for chunks whose detail is missing,
++    /// so this drains between bursts rather than growing with the view.
++    detail_backlog: std::collections::VecDeque<Summary>,
+     /// `refresh`es so far (`Job::RequestDetail`), and the areas of the last
+     /// ones, each with its number.
+     refreshes: u64,
+@@ -1570,6 +1594,7 @@ impl Lod {
+             pending: FxHashSet::default(),
+             detail_masks: FxHashMap::default(),
+             detail_request_pending: false,
++            detail_backlog: std::collections::VecDeque::new(),
+             refreshes: 0,
+             refreshed: VecDeque::new(),
+             detail_request_at: std::time::Instant::now(),
+@@ -2269,6 +2294,12 @@ impl Lod {
+     fn request_detail(&mut self, camera: [i32; 2]) {
+         if self.held()
+             || self.detail_request_pending
++            // Nothing new while summaries wait: a chunk whose detail is still
++            // in the backlog has its mask clear, so it would be asked for
++            // again, and answered from the cache at once. Without this the
++            // backlog grew by a request every 250 ms and never drained --
++            // 0.5 FPS, with `update` averaging 9.7 s a frame.
++            || !self.detail_backlog.is_empty()
+             || self.detail_request_at.elapsed() < std::time::Duration::from_millis(250)
+         {
+             return;
+@@ -2495,17 +2526,25 @@ impl Lod {
+         self.wanted_stale = true;
+     }
+     fn receive(&mut self, meshes: &mut Vec<(TileKey, SectionMesh)>) {
++        let started = std::time::Instant::now();
++        // What an earlier frame left, before anything new: a chunk's detail
++        // must not overtake the detail of a chunk that arrived before it.
++        while started.elapsed() < DETAIL_BUDGET {
++            let Some(summary) = self.detail_backlog.pop_front() else {
++                break;
++            };
++            self.apply_summary(summary);
++        }
+         while let Ok(done) = self.results.try_recv() {
+             match done {
+-                // Read before a `refresh` over it since: asked again (its
+-                // bits stay clear), never kept over the newer data.
+-                Done::Detail(key, _, asked) if self.refreshed_since(key, asked) => {}
+-                Done::Detail(key, columns, _) => {
+-                    crate::spans::time("lod_detail", || self.finish_detail(key, columns))
+-                }
+-                Done::Observed(key, columns) => {
+-                    crate::spans::time("lod_detail", || self.finish_observed(key, columns))
+-                }
++                Done::Detail(key, columns, asked) => self.take_summary(
++                    Summary::Detail(key, columns, asked),
++                    started.elapsed() < DETAIL_BUDGET,
++                ),
++                Done::Observed(key, columns) => self.take_summary(
++                    Summary::Observed(key, columns),
++                    started.elapsed() < DETAIL_BUDGET,
++                ),
+                 Done::DetailRequested => self.detail_request_pending = false,
+                 Done::Sample {
+                     key,
+@@ -2530,6 +2569,28 @@ impl Lod {
+             }
+         }
+     }
++    /// Applies a summary while the frame has budget and nothing is already
++    /// waiting, else leaves it for a later frame.
++    fn take_summary(&mut self, summary: Summary, within_budget: bool) {
++        if within_budget && self.detail_backlog.is_empty() {
++            self.apply_summary(summary);
++        } else {
++            self.detail_backlog.push_back(summary);
++        }
++    }
++    /// A chunk's columns applied to the tiles over it.
++    ///
++    /// `refreshed_since` is tested here and not when the result arrives, so a
++    /// refresh over the chunk while the summary waited still drops it: it was
++    /// read before that refresh, and the tiles ask again with their bits
++    /// clear.
++    fn apply_summary(&mut self, summary: Summary) {
++        crate::spans::time("lod_detail", || match summary {
++            Summary::Detail(key, _, asked) if self.refreshed_since(key, asked) => {}
++            Summary::Detail(key, columns, _) => self.finish_detail(key, columns),
++            Summary::Observed(key, columns) => self.finish_observed(key, columns),
++        });
++    }
+     /// A finished mesh: shown when it is newer than what the tile shows now.
+     /// A result newer than the frame's current one is still useful while a
+     /// newer job is pending — re-marking a tile re-dirties its neighbours and

@@ -1,0 +1,43 @@
+--- a/crates/horizon-shaders/src/post.rs
++++ b/crates/horizon-shaders/src/post.rs
+@@ -988,18 +988,10 @@
+                     None => (solid, cut),
+                 }
+             }
+-            None => match &inputs.terrain_parts {
+-                // One program draws both parts, so both load or neither does.
+-                Some([solid, cut]) => match (
+-                    gbuffers(&TERRAIN, Group::Gbuffers, solid),
+-                    gbuffers(&TERRAIN, Group::Gbuffers, &cutout(cut)),
+-                ) {
+-                    (Some(solid), Some(cut)) => (Some(solid), Some(cut)),
+-                    _ => (None, None),
+-                },
+-                // A game that draws terrain in one part: all of it with the cutout test.
+-                None => (gbuffers(&TERRAIN, Group::Gbuffers, &cutout(terrain)), None),
+-            },
++            // No split program: one draw of all terrain with the cutout test. Two parts would be
++            // two render passes over the same buffers (a load and store of every colortex each),
++            // which costs a lot on a tile GPU, for a pack that can't tell the parts apart.
++            None => (gbuffers(&TERRAIN, Group::Gbuffers, &cutout(terrain)), None),
+         };
+         // gbuffers_water falls back to gbuffers_terrain's chain (2.3).
+         let water = gbuffers(&WATER, Group::Translucent, terrain);
+@@ -3013,7 +3005,7 @@
+             names(&[terrain, cutout], true),
+             [some(terrain), some(cutout)]
+         );
+-        assert_eq!(names(&[terrain], true), [some(terrain), some(terrain)]);
++        assert_eq!(names(&[terrain], true), [some(terrain), None]);
+         // Without the game's two parts, terrain draws whole.
+         assert_eq!(
+             names(&[terrain, solid, cutout], false),
+@@ -3066,7 +3058,7 @@
+         let some = |name: &str| Some(name.to_owned());
+         assert_eq!(
+             terrain_names(&[terrain, solid], off, true),
+-            [some(terrain), some(terrain)]
++            [some(terrain), None]
+         );
+         let on = "program.gbuffers_terrain_solid.enabled = true\n";
+         assert_eq!(

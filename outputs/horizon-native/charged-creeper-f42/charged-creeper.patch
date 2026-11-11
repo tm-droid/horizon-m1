@@ -1,0 +1,55 @@
+--- a/crates/horizon-client/src/mobs/render.rs
++++ b/crates/horizon-client/src/mobs/render.rs
+@@ -2242,27 +2242,33 @@
+     }
+     // EnergySwirlLayer: the armour model, additive, scrolling over the sprite.
+     if let Some((model, texture, x_offset)) = energy_swirl(m, s.age)
+-        && let Some(part) = m.kind.layer(model)
+         && let Some([u0, v0, u1, v1]) = atlas(texture)
+     {
+-        layer_poses.reset(part);
+-        anim::setup(m, &s, &mut layer_poses, &data.animations);
+-        // `RenderTypes.energySwirl`'s texture offset, as the sprite-local UV.
+-        let (du, dv) = (x_offset % 1.0, s.age * 0.01 % 1.0);
+-        let start = out.len();
+-        draw(
+-            part,
+-            base,
+-            &layer_poses,
+-            [du, dv, 1.0 + du, 1.0 + dv],
+-            crate::breaking::stage_light([u1 - u0, v1 - v0]),
+-            crate::breaking::stage_light([u0, v0]),
+-            crate::gfx::ENERGY_SWIRL_OVERLAY,
+-            out,
+-        );
+-        // No lighting: the colour bytes carry the sprite's size (fs_energy_swirl).
+-        for vertex in &mut out[start..] {
+-            vertex.normal = [0; 4];
++        let custom = cem.layer(model).filter(|_| model == "creeper#armor");
++        let part = custom.map(|layer| &layer.model).or_else(|| m.kind.layer(model));
++        if let Some(part) = part {
++            layer_poses.reset(part);
++            anim::setup(m, &s, &mut layer_poses, &data.animations);
++            if let Some(animation) = custom.and_then(|layer| layer.animation.as_ref()) {
++                animation.run(m, &s, &mut layer_poses);
++            }
++            // `RenderTypes.energySwirl`'s texture offset, as the sprite-local UV.
++            let (du, dv) = (x_offset % 1.0, s.age * 0.01 % 1.0);
++            let start = out.len();
++            draw(
++                part,
++                base,
++                &layer_poses,
++                [du, dv, 1.0 + du, 1.0 + dv],
++                crate::breaking::stage_light([u1 - u0, v1 - v0]),
++                crate::breaking::stage_light([u0, v0]),
++                crate::gfx::ENERGY_SWIRL_OVERLAY,
++                out,
++            );
++            // No lighting: the colour bytes carry the sprite's size (fs_energy_swirl).
++            for vertex in &mut out[start..] {
++                vertex.normal = [0; 4];
++            }
+         }
+     }
+     if shell_last {

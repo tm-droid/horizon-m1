@@ -1,0 +1,199 @@
+From 121729e37bcc71345f01a943972a422157aa9b00 Mon Sep 17 00:00:00 2001
+From: x <x@x>
+Date: Tue, 10 Nov 2026 20:41:27 +0800
+Subject: [PATCH] Size bulk helper pools from performance cores; utility QoS
+ network threads in single player
+
+Encode pool: threads beyond default_workers() idle unless the game accepts network connections.
+Network pool threads run at utility QoS until a listener opens. Far decoration, far LOD and
+region compression pools size from performance cores (horizon_threads::fast_cores).
+---
+ crates/horizon-client-render/src/lod.rs     |  2 +-
+ crates/horizon-client/src/lan/chunks.rs     |  9 +++-
+ crates/horizon-client/src/lan/io_pool.rs    |  7 +++
+ crates/horizon-client/src/lan/mod.rs        |  2 +
+ crates/horizon-client/src/save.rs           |  2 +-
+ crates/horizon-client/src/vanillagen/lod.rs |  2 +-
+ crates/horizon-threads/src/lib.rs           | 51 +++++++++++++++++++++
+ 7 files changed, 71 insertions(+), 4 deletions(-)
+
+diff --git a/crates/horizon-client-render/src/lod.rs b/crates/horizon-client-render/src/lod.rs
+index daaddc534a..22ac064706 100644
+--- a/crates/horizon-client-render/src/lod.rs
++++ b/crates/horizon-client-render/src/lod.rs
+@@ -1336,7 +1336,7 @@ impl Lod {
+         let keeps_observed = source
+             .as_ref()
+             .is_some_and(|source| source.keeps_observed());
+-        let cores = horizon_threads::worker_count();
++        let cores = horizon_threads::fast_cores();
+         let shared = Arc::new(Shared {
+             jobs: Mutex::new(VecDeque::new()),
+             mesh_jobs: Mutex::new(std::collections::BinaryHeap::new()),
+diff --git a/crates/horizon-client/src/lan/chunks.rs b/crates/horizon-client/src/lan/chunks.rs
+index a5b5fd17e2..b78e94345c 100644
+--- a/crates/horizon-client/src/lan/chunks.rs
++++ b/crates/horizon-client/src/lan/chunks.rs
+@@ -491,12 +491,16 @@ fn warm_pool() -> Option<&'static WarmPool> {
+     static POOL: OnceLock<Option<Arc<WarmPool>>> = OnceLock::new();
+     POOL.get_or_init(|| {
+         let threads = horizon_threads::worker_count() - 1;
++        // Beyond this many only a LAN or dedicated server uses them (`horizon_threads::network_open`):
++        // with the window's player alone, 7 threads on an M1's 4 performance cores starved
++        // the render thread while a batch of chunks was encoded.
++        let single_player_threads = horizon_threads::default_workers();
+         let pool = Arc::new(WarmPool {
+             job: Default::default(),
+             ready: Default::default(),
+         });
+         let started = (0..threads)
+-            .filter(|i| {
++            .filter(|&i| {
+                 let pool = pool.clone();
+                 std::thread::Builder::new()
+                     .name(format!("horizon-chunk-encode-{i}"))
+@@ -512,6 +516,9 @@ fn warm_pool() -> Option<&'static WarmPool> {
+                                 done = slot.0;
+                                 slot.1.clone()
+                             };
++                            if i >= single_player_threads && !horizon_threads::network_open() {
++                                continue;
++                            }
+                             if let Some(job) = job {
+                                 job.run();
+                             }
+diff --git a/crates/horizon-client/src/lan/io_pool.rs b/crates/horizon-client/src/lan/io_pool.rs
+index d26223bfe6..ed1075353f 100644
+--- a/crates/horizon-client/src/lan/io_pool.rs
++++ b/crates/horizon-client/src/lan/io_pool.rs
+@@ -323,12 +323,19 @@ pub(super) fn adopt(
+ }
+ 
+ fn run(mut poll: Poll, worker: &Arc<Worker>) {
++    // `None` until the first pass; then the class last set (`network_current`).
++    let mut wide = None;
+     let mut events = Events::with_capacity(1024);
+     let mut conns: Vec<Option<Conn>> = Vec::new();
+     let mut free: Vec<usize> = Vec::new();
+     let mut touched: Vec<usize> = Vec::new();
+     let mut sweep_at = Instant::now() + SWEEP;
+     loop {
++        let open = horizon_threads::network_open();
++        if wide != Some(open) {
++            wide = Some(open);
++            horizon_threads::network_current(open);
++        }
+         let wait = sweep_at.saturating_duration_since(Instant::now());
+         if let Err(e) = poll.poll(&mut events, Some(wait))
+             && e.kind() != ErrorKind::Interrupted
+diff --git a/crates/horizon-client/src/lan/mod.rs b/crates/horizon-client/src/lan/mod.rs
+index d51f4e3932..cde56b862a 100644
+--- a/crates/horizon-client/src/lan/mod.rs
++++ b/crates/horizon-client/src/lan/mod.rs
+@@ -752,6 +752,7 @@ impl Lan {
+         self.listener = Some(thread);
+         self.listener_stop = stop;
+         self.port = port;
++        horizon_threads::set_network_open(true);
+         Ok(port)
+     }
+     /// Stop accepting connections and announcing; connections already in
+@@ -763,6 +764,7 @@ impl Lan {
+         }
+         self._pinger = None;
+         self.port = 0;
++        horizon_threads::set_network_open(false);
+     }
+     /// Whether connections from the network are accepted.
+     pub fn listening(&self) -> bool {
+diff --git a/crates/horizon-client/src/save.rs b/crates/horizon-client/src/save.rs
+index 63b350bd93..af991f802d 100644
+--- a/crates/horizon-client/src/save.rs
++++ b/crates/horizon-client/src/save.rs
+@@ -2145,7 +2145,7 @@ fn compress_records(
+             .map(|tag| ChunkRecord::from_nbt(&tag, compression, timestamp, Limits::saved()))
+             .transpose()
+     };
+-    let helpers = horizon_threads::worker_count()
++    let helpers = horizon_threads::fast_cores()
+         .div_ceil(2)
+         .min(records.len() / CHUNKS_PER_HELPER);
+     if helpers <= 1 {
+diff --git a/crates/horizon-client/src/vanillagen/lod.rs b/crates/horizon-client/src/vanillagen/lod.rs
+index 7fb14a7b40..e385622517 100644
+--- a/crates/horizon-client/src/vanillagen/lod.rs
++++ b/crates/horizon-client/src/vanillagen/lod.rs
+@@ -72,7 +72,7 @@ impl Builder {
+         // ticks and the frame leave, so more cores can share it: a third of
+         // the threads, rounded up (a 4-thread machine's one thread left idle
+         // time while the far trees and structures came in).
+-        let count = horizon_threads::worker_count().div_ceil(3).clamp(1, 12);
++        let count = horizon_threads::fast_cores().div_ceil(3).clamp(1, 12);
+         let threads = (0..count)
+             .map(|_| Self::spawn(terrain.clone(), shared.clone(), tx.clone(), background))
+             .collect();
+diff --git a/crates/horizon-threads/src/lib.rs b/crates/horizon-threads/src/lib.rs
+index d53abe0472..a27ad44fd6 100644
+--- a/crates/horizon-threads/src/lib.rs
++++ b/crates/horizon-threads/src/lib.rs
+@@ -39,6 +39,57 @@ pub fn default_workers() -> usize {
+     workers_for(worker_count(), performance_cores)
+ }
+ 
++/// The cores a pool of bulk helpers should fit on without taking the render and server
++/// threads' core: `worker_count`, and on Apple silicon no more than the performance cores
++/// (an M1's 4 of 8). A pool sized from `worker_count` there put 7 threads on 4 fast cores
++/// during chunk loading; the pools that must not wait behind the frame size from this.
++pub fn fast_cores() -> usize {
++    static FAST: OnceLock<usize> = OnceLock::new();
++    *FAST.get_or_init(|| {
++        let all = worker_count();
++        performance_cores().map_or(all, |fast| all.min(fast))
++    })
++}
++
++/// Set while the game accepts connections from the network (a LAN world, a dedicated
++/// server): the pools sized for one local player then use all their threads.
++static NETWORK_OPEN: AtomicBool = AtomicBool::new(false);
++
++/// Record that the game starts or stops accepting network connections.
++pub fn set_network_open(open: bool) {
++    NETWORK_OPEN.store(open, Ordering::Relaxed);
++}
++
++/// Whether the game accepts connections from the network (`set_network_open`).
++pub fn network_open() -> bool {
++    NETWORK_OPEN.load(Ordering::Relaxed)
++}
++
++/// Called by a network thread (and again whenever `network_open` changed): with only the
++/// window's own in-memory connection to serve (`wide` false) it runs at utility quality of
++/// service on macOS, as it mostly waits and frames small packets, so a burst of chunk
++/// packets doesn't take a performance core from the render thread; with guests (`wide`) it
++/// returns to the default class. Nothing elsewhere. Whether the OS took it.
++pub fn network_current(wide: bool) -> bool {
++    network(wide)
++}
++
++#[cfg(target_vendor = "apple")]
++fn network(wide: bool) -> bool {
++    let class = if wide {
++        libc::qos_class_t::QOS_CLASS_DEFAULT
++    } else {
++        libc::qos_class_t::QOS_CLASS_UTILITY
++    };
++    // SAFETY: sets the calling thread's own QoS class; no pointers.
++    unsafe { libc::pthread_set_qos_class_self_np(class, 0) == 0 }
++}
++
++#[cfg(not(target_vendor = "apple"))]
++fn network(_wide: bool) -> bool {
++    false
++}
++
+ /// [`default_workers`] for `cores` cores, of which `performance` (asked only here, the
+ /// sysctl) are performance cores where the machine tells them apart (`None` elsewhere):
+ /// one less than the smaller count, at least 1.
+-- 
+2.54.0 (Apple Git-157)
+

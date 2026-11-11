@@ -1,0 +1,20 @@
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+index 9987842..b1bd8f0 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -16023,9 +16023,15 @@ impl Game<'_> {
+         // summoned outside the End (the server's AddEntity) is shown too.
+         if !title {
+             let mut dragon = Vec::new();
++            // The dragon draws after the stage spans `entity_geometry` ends on (`DESTROY`), so
++            // it needs its own span or a pack's crack program draws its body.
++            self.mark_entity(entities.len(), "minecraft:ender_dragon");
+             self.dragon_geometry(camera, alpha, &mut dragon, &mut additive);
++            self.mark_entity(entities.len() + dragon.len(), "minecraft:dragon_fireball");
+             self.dragon_fireball_geometry(camera, alpha, &mut dragon);
+             entities.extend(dragon);
++            // What follows (End crystals, outlines) kept the `DESTROY` span before.
++            self.mark_stage(entities.len(), "DESTROY");
+         }
+         pr.lap("pr_dragon_bolts");
+         let (celestial, stars) = if title {

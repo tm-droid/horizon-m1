@@ -1,0 +1,183 @@
+diff --git a/crates/horizon-client-render/src/block_entity_render.rs b/crates/horizon-client-render/src/block_entity_render.rs
+--- a/crates/horizon-client-render/src/block_entity_render.rs
++++ b/crates/horizon-client-render/src/block_entity_render.rs
+@@ -1024,7 +1024,21 @@
+     pub static_bytes_uploaded: u64,
+     pub static_entities_drawn: u64,
+     pub dynamic_entities_drawn: u64,
+-}
++    pub distance_probe: Option<DistanceProbe>,
++}
++
++/// Candidate and batch counts, sampled only for the block-entity range experiment.
++#[derive(Clone, Copy, Debug, Default)]
++pub struct DistanceProbe {
++    /// Ordinary visible candidates through 24, 32, 48 and 64 blocks, in disjoint bands.
++    pub ordinary_candidates: [u64; 4],
++    /// Special-range or off-screen candidates inside their existing range.
++    pub special_candidates: u64,
++    pub vanilla_cpu_quads: u64,
++    pub mod_cpu_quads: u64,
++    pub native_static_quads: u64,
++}
++
+ #[derive(Default)]
+ struct StaticSectionGeometry {
+     revision: u64,
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -10650,6 +10650,11 @@
+                     v.intersects(o - glam::Vec3::ONE, o + glam::Vec3::splat(2.0))
+                 })
+             };
++            static DISTANCE_PROBE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++            let probe_enabled = *DISTANCE_PROBE.get_or_init(|| {
++                std::env::var_os("HORIZON_BLOCK_ENTITY_DISTANCE_PROBE").is_some_and(|v| v == "1")
++            });
++            let distance_probe = std::cell::Cell::new(block_entity_render::DistanceProbe::default());
+             let visible = r
+                 .visible_block_entities_in_frustum(
+                     self.settings.chunk_fade,
+@@ -10663,7 +10668,28 @@
+                     self.res.block_entity_render().renders(state)
+                         && (off_screen(state) || *section_inside || in_view(&pos))
+                 })
+-                .map(|(block, _)| block);
++                .map(|(block, _)| block)
++                .inspect(|(pos, state)| {
++                    if !probe_enabled {
++                        return;
++                    }
++                    let center = glam::DVec3::from_array(pos.map(f64::from)) + 0.5;
++                    let distance = center.distance_squared(camera);
++                    let mut counts = distance_probe.get();
++                    if off_screen(*state) {
++                        let limit = if long_range(*state) { 256.0 } else { 64.0 };
++                        if distance <= limit * limit {
++                            counts.special_candidates += 1;
++                        }
++                    } else if let Some(band) = [24.0, 32.0, 48.0, 64.0]
++                        .iter()
++                        .position(|limit| distance <= limit * limit)
++                    {
++                        counts.ordinary_candidates[band] += 1;
++                    }
++                    distance_probe.set(counts);
++                });
++            let vanilla_start = out.len();
+             let block_entity_cache = CacheOptions {
+                 shulker_boxes: self.settings.horizon.cache_shulker_boxes,
+                 signs: self.settings.horizon.cache_signs,
+@@ -10742,12 +10768,19 @@
+                 .into_iter()
+                 .flatten();
+             let untemplated = self.untemplated_mod_block_entities(camera);
++            let mod_start = out.len();
+             self.mod_block_entity_geometry(
+                 mods.chain(untemplated.iter()),
+                 camera,
+                 alpha as f32,
+                 &mut out,
+             );
++            if probe_enabled {
++                let mut counts = distance_probe.into_inner();
++                counts.vanilla_cpu_quads = ((mod_start - vanilla_start) / 4) as u64;
++                counts.mod_cpu_quads = ((out.len() - mod_start) / 4) as u64;
++                static_block_entity_stats.distance_probe = Some(counts);
++            }
+             self.mark_stage(out.len(), "DESTROY");
+             for &(pos, stage) in &cracks {
+                 let state = self.world.block(pos[0], pos[1], pos[2]);
+diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -7575,6 +7575,9 @@
+         }
+         self.static_entity_frame_stats = frame.static_block_entity_stats;
+         self.static_entity_frame_stats.static_bytes_uploaded = static_bytes_uploaded;
++        if let Some(probe) = &mut self.static_entity_frame_stats.distance_probe {
++            probe.native_static_quads = u64::from(static_entity_quads);
++        }
+         self.entity_outline.prepare(
+             &self.device,
+             &mut self.uploads,
+diff --git a/crates/horizon-client/src/control.rs b/crates/horizon-client/src/control.rs
+--- a/crates/horizon-client/src/control.rs
++++ b/crates/horizon-client/src/control.rs
+@@ -9,7 +9,7 @@
+ //! path ends in `.json`, the game listens on a random localhost TCP port and
+ //! writes `{"transport":"tcp","port":N,"token":"..."}` to the path, readable
+ //! only by its user; a client's first line must then be `auth TOKEN`.
+-use crate::block_entity_render::StaticCacheFrameStats;
++use crate::block_entity_render::{DistanceProbe, StaticCacheFrameStats};
+ use std::{
+     io::{self, BufRead, BufReader, Read, Write},
+     net::{Ipv4Addr, TcpListener, TcpStream},
+@@ -452,6 +452,7 @@
+     static_bytes_uploaded: u64,
+     static_entities_drawn: u64,
+     dynamic_entities_drawn: u64,
++    block_entity_distance_probe: Option<DistanceProbe>,
+ }
+ 
+ /// The parts of a frame's CPU time: world streaming and uploads, game ticks,
+@@ -527,6 +528,16 @@
+         self.static_bytes_uploaded += stats.static_bytes_uploaded;
+         self.static_entities_drawn += stats.static_entities_drawn;
+         self.dynamic_entities_drawn += stats.dynamic_entities_drawn;
++        if let Some(probe) = stats.distance_probe {
++            let total = self.block_entity_distance_probe.get_or_insert_with(DistanceProbe::default);
++            for (sum, count) in total.ordinary_candidates.iter_mut().zip(probe.ordinary_candidates) {
++                *sum += count;
++            }
++            total.special_candidates += probe.special_candidates;
++            total.vanilla_cpu_quads += probe.vanilla_cpu_quads;
++            total.mod_cpu_quads += probe.mod_cpu_quads;
++            total.native_static_quads += probe.native_static_quads;
++        }
+     }
+     /// Every recorded frame time, in milliseconds, in order.
+     pub fn frame_millis(&self) -> &[f32] {
+@@ -550,6 +561,7 @@
+         self.static_bytes_uploaded = 0;
+         self.static_entities_drawn = 0;
+         self.dynamic_entities_drawn = 0;
++        self.block_entity_distance_probe = None;
+     }
+     pub fn summary(&self) -> serde_json::Value {
+         let mut sorted = self.millis.clone();
+@@ -579,7 +591,7 @@
+                 .copied();
+             p99.map_or(serde_json::Value::Null, |p| self.phase_average(p))
+         };
+-        serde_json::json!({
++        let mut summary = serde_json::json!({
+             "frames": n,
+             "seconds": total / 1000.0,
+             "avg_fps": n as f64 * 1000.0 / total,
+@@ -600,6 +612,21 @@
+             "dynamic_entities_drawn": self.dynamic_entities_drawn,
+             "static_entities_drawn_avg_per_frame": self.static_entities_drawn as f64 / n as f64,
+             "dynamic_entities_drawn_avg_per_frame": self.dynamic_entities_drawn as f64 / n as f64,
+-        })
+-    }
+-}
++        });
++        if let Some(probe) = self.block_entity_distance_probe {
++            summary["block_entity_distance_probe"] = serde_json::json!({
++                "ordinary_candidates_by_band": {
++                    "0_to_24": probe.ordinary_candidates[0],
++                    "over_24_to_32": probe.ordinary_candidates[1],
++                    "over_32_to_48": probe.ordinary_candidates[2],
++                    "over_48_to_64": probe.ordinary_candidates[3],
++                },
++                "special_candidates": probe.special_candidates,
++                "vanilla_cpu_quads": probe.vanilla_cpu_quads,
++                "mod_cpu_quads": probe.mod_cpu_quads,
++                "native_static_quads": probe.native_static_quads,
++            });
++        }
++        summary
++    }
++}

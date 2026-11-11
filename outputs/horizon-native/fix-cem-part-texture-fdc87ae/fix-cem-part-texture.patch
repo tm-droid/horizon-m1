@@ -1,0 +1,478 @@
+diff --git a/crates/horizon-client-render/src/block_entity_cem.rs b/crates/horizon-client-render/src/block_entity_cem.rs
+index 7048c97bea..fe1a19eb26 100644
+--- a/crates/horizon-client-render/src/block_entity_cem.rs
++++ b/crates/horizon-client-render/src/block_entity_cem.rs
+@@ -219,6 +219,11 @@ fn reshape_all(
+         let Some(Some(jem)) = parsed.get(path) else {
+             continue;
+         };
++        if jem.parts.iter().any(|part| has_part_texture(&part.bone)) {
++            log::warn!(
++                "Horizon: custom entity model {path}: per-part textures are ignored on block entities"
++            );
++        }
+         for (p, _) in jem.parts.iter().zip(marks).filter(|(_, hit)| !**hit) {
+             unused.push(((*path).to_owned(), p.part.clone()));
+         }
+@@ -226,6 +231,10 @@ fn reshape_all(
+     Some(((models, textures), unused))
+ }
+ 
++fn has_part_texture(bone: &Bone) -> bool {
++    bone.texture.is_some() || bone.children.iter().any(has_part_texture)
++}
++
+ /// `jem`'s entries on `model`, OptiFine's part names read through `parts`, else as the vanilla
+ /// part's own name: a replacing entry clears its part's boxes, and each joins the part as a child
+ /// `cem#<n>`. Which entries found their part.
+diff --git a/crates/horizon-client/src/mobs/cem.rs b/crates/horizon-client/src/mobs/cem.rs
+index ff175c6b07..58a3d68ee8 100644
+--- a/crates/horizon-client/src/mobs/cem.rs
++++ b/crates/horizon-client/src/mobs/cem.rs
+@@ -42,6 +42,8 @@ pub struct CemLayer {
+     /// The atlas name of the `.jem`'s texture (`entity/zombie/zombie_green`), drawn instead of
+     /// the layer's vanilla texture.
+     pub texture: Option<String>,
++    /// Explicit texture roots keyed by the baked model's private bone names.
++    pub(super) part_textures: HashMap<String, String>,
+     /// The `attachments` the pack's bones declare, by the bone's `cem#<n>` name: the item
+     /// anchors a renderer looks up (`right_handheld_item`, `left_handheld_item`, `fox_item`).
+     pub anchors: Vec<(String, String, [f32; 3])>,
+@@ -138,6 +140,11 @@ impl CemModels {
+             if layer_suffix(&key) != layer_suffix(&layer_key(name)) {
+                 layer.texture = None;
+             }
++            if !layer.part_textures.is_empty() && secondary_layer(&key) {
++                log::warn!(
++                    "Horizon: custom entity model {path}: per-part textures are ignored on secondary mob layer {key}"
++                );
++            }
+             layers.insert(key, layer);
+         }
+         (Self { layers }, standing_species)
+@@ -363,6 +370,22 @@ fn layer_suffix(key: &str) -> &str {
+     key.split_once('#').map_or(key, |(_, layer)| layer)
+ }
+ 
++/// The secondary draws in `render::layers` use their own textures. Several of
++/// those layers have a standalone model whose key ends in `#main`.
++fn secondary_layer(key: &str) -> bool {
++    layer_suffix(key) != "main"
++        || matches!(
++            key,
++            "wolf_armor#main"
++                | "horse_armor#main"
++                | "undead_horse_armor#main"
++                | "nautilus_armor#main"
++                | "happy_ghast_harness#main"
++                | "happy_ghast_ropes#main"
++                | "happy_ghast_baby_ropes#main"
++        )
++}
++
+ /// Models without a file of their own that take another's (OptiFine's and Entity Model
+ /// Features' tables), besides the babies: (model, the model it takes).
+ const FALLBACKS: &[(&str, &str)] = &[
+@@ -589,6 +612,7 @@ impl CemLayer {
+         let mut count = 0;
+         let mut ids = HashMap::new();
+         let mut anchors = Vec::new();
++        let mut part_textures = HashMap::new();
+         // The vanilla nodes this file names, resolved before any is replaced: what a
+         // replaced node's own children are measured against (an entry can name a part below
+         // one an earlier entry replaced). The same resolution an entry's own target takes,
+@@ -615,7 +639,7 @@ impl CemLayer {
+             } else {
+                 p.part.clone()
+             };
+-            let bone = part(&p.bone, &mut count, &mut ids, &mut anchors);
++            let bone = part(&p.bone, &mut count, &mut ids, &mut anchors, &mut part_textures);
+             let Some(node) = find_mut(&mut out, &target) else {
+                 log::warn!("Horizon: custom entity model {name}: no part {}", p.part);
+                 continue;
+@@ -647,6 +671,7 @@ impl CemLayer {
+             model: Arc::new(out),
+             animation,
+             texture: jem.texture.as_deref().and_then(atlas_name),
++            part_textures,
+             anchors,
+         }
+     }
+@@ -700,12 +725,16 @@ fn part(
+     count: &mut usize,
+     ids: &mut HashMap<String, String>,
+     anchors: &mut Vec<(String, String, [f32; 3])>,
++    part_textures: &mut HashMap<String, String>,
+ ) -> Part {
+     let name = format!("cem#{count}");
+     *count += 1;
+     if let Some(id) = &bone.id {
+         ids.insert(name.clone(), id.clone());
+     }
++    if let Some(texture) = bone.texture.as_deref().and_then(atlas_name) {
++        part_textures.insert(name.clone(), texture);
++    }
+     for (kind, at) in &bone.attachments {
+         anchors.push((name.clone(), kind.clone(), *at));
+     }
+@@ -727,7 +756,7 @@ fn part(
+         children: bone
+             .children
+             .iter()
+-            .map(|c| part(c, count, ids, anchors))
++            .map(|c| part(c, count, ids, anchors, part_textures))
+             .collect(),
+     }
+ }
+@@ -1215,6 +1244,45 @@ mod tests {
+         assert_eq!(sprite_counts(&mob, &cem, &sprites, false), [0, 24, 4]);
+     }
+ 
++    #[test]
++    fn explicit_body_part_texture_inherits_and_skips_the_eyes_overlay() {
++        use super::super::{Anim, Mob, Species};
++        let mut tree = plane("root", vec![plane("body1", vec![])]);
++        tree.polygons.clear();
++        let jem = format!(
++            r#"{{"models": [{{"part": "body", "attach": true,
++                "texture": "textures/entity/spider/accessory.png", {BOX},
++                "submodels": [{{{BOX}}}, {{"texture": "textures/entity/spider/missing.png", {BOX}}}]
++            }}]}}"#
++        );
++        let cem = Arc::new(models(
++            "render-part-texture",
++            &[("optifine/cem/spider.jem", &jem)],
++            &["spider#main"],
++            &tree,
++        ));
++        let mob = Mob::new(
++            1,
++            mob_kind(
++                "minecraft:spider",
++                Species::Spider,
++                Anim::Spider,
++                "entity/spider/spider",
++                &["spider#main"],
++                &tree,
++            ),
++            horizon_core::geometry::Vec3::ZERO,
++            0.0,
++        );
++        let sprites = [
++            "entity/spider/accessory",
++            "entity/spider/spider_eyes",
++            "entity/spider/spider",
++        ];
++        assert_eq!(sprite_counts(&mob, &cem, &sprites, true), [72, 4, 4]);
++        assert_eq!(sprite_counts(&mob, &cem, &sprites, false), [0, 76, 76]);
++    }
++
+     /// A wolf armour `.jem`'s texture paints the armour, the first layer on its model, and
+     /// not the cracks drawn over it on the same model.
+     #[test]
+diff --git a/crates/horizon-client/src/mobs/render.rs b/crates/horizon-client/src/mobs/render.rs
+index 137bba8a70..34e5733e63 100644
+--- a/crates/horizon-client/src/mobs/render.rs
++++ b/crates/horizon-client/src/mobs/render.rs
+@@ -1387,6 +1387,7 @@ pub fn draw_scrolled(
+         ModelNormals::new(base),
+         poses,
+         uv,
++        None,
+         scroll,
+         color,
+         light,
+@@ -1394,6 +1395,17 @@ pub fn draw_scrolled(
+         out,
+     );
+ }
++/// Paint explicitly textured CEM bones with their own sprite on the base pass,
++/// and leave those bones out of unrelated body overlays.
++#[derive(Clone, Copy)]
++struct PartPaint<'a> {
++    layer: &'a super::cem::CemLayer,
++    atlas: Atlas<'a>,
++    overlay: bool,
++    /// The dye of a sheep's wool layer: the wool bones a pack paints with `sheep_wool` take it,
++    /// as the vanilla wool layer would (the pack's own wool layer model has no boxes).
++    wool_tint: Option<u32>,
++}
+ #[allow(clippy::too_many_arguments)]
+ fn draw_normals(
+     part: &Part,
+@@ -1401,6 +1413,7 @@ fn draw_normals(
+     normals: ModelNormals,
+     poses: &Poses,
+     uv: [f32; 4],
++    paint: Option<PartPaint<'_>>,
+     scroll: f32,
+     color: u32,
+     light: u32,
+@@ -1413,6 +1426,24 @@ fn draw_normals(
+         return;
+     }
+     let normals = normals.part(p);
++    let explicit = paint.and_then(|paint| (paint.atlas)(paint.layer.part_textures.get(&part.name)?));
++    if explicit.is_some() && paint.is_some_and(|paint| paint.overlay) {
++        return;
++    }
++    let uv = explicit.unwrap_or(uv);
++    let color = match paint {
++        Some(paint)
++            if explicit.is_some()
++                && paint
++                    .layer
++                    .part_textures
++                    .get(&part.name)
++                    .is_some_and(|t| t.starts_with("entity/sheep/sheep_wool")) =>
++        {
++            paint.wool_tint.unwrap_or(color)
++        }
++        _ => color,
++    };
+     // `skips` is a name lookup: ask once per part, not once per polygon. A part
+     // hidden this way still draws its children, so only the polygons are gated.
+     if !poses.skips(part) {
+@@ -1443,7 +1474,7 @@ fn draw_normals(
+         }
+     }
+     for c in &part.children {
+-        draw_normals(c, m, normals, poses, uv, scroll, color, light, overlay, out);
++        draw_normals(c, m, normals, poses, uv, paint, scroll, color, light, overlay, out);
+     }
+ }
+ /// A part's matrix under `base` for its pose (`ModelPart.translateAndRotate`
+@@ -1857,7 +1888,7 @@ fn cem_key(model_key: &str) -> &str {
+         model_key
+     }
+ }
+-/// Every texture [`render_visible`] may look up for `m` now (keep the two in step: a texture
++/// Every texture eligible for a random pick that [`render_visible`] may look up for `m` (keep the two in step: a texture
+ /// drawn but not listed here never gets a random pick): the body's and each layer's, a
+ /// custom model's own texture beside them (`cem_texture` falls back to the vanilla one when
+ /// the atlas lacks it, and only the layer a `.jem` was made for takes it, `paints_with_jem`),
+@@ -2084,6 +2115,17 @@ fn render_visible(
+     if !posable {
+         skin = None;
+     }
++    let part_paint = custom_body
++        .filter(|layer| !layer.part_textures.is_empty())
++        .map(|layer| PartPaint {
++            layer,
++            atlas,
++            overlay: false,
++            wool_tint: all_layers
++                .iter()
++                .find(|l| matches!(&*l.model, "sheep#wool" | "sheep_baby#wool"))
++                .map(|l| l.color),
++        });
+     let draw_body = |out: &mut Vec<Vertex>, skin: &mut Option<&mut super::skin::Skin>| {
+         // A player or mannequin whose skin has no atlas sprite (an evicted or
+         // never stored download) draws with its default skin, not invisibly.
+@@ -2097,31 +2139,22 @@ fn render_visible(
+         });
+         if body_visible && let Some(uv) = uv {
+             let start = out.len();
+-            put(
+-                skin,
+-                &model,
+-                base,
+-                &poses,
+-                uv,
+-                0.0,
+-                body_color(m, alpha),
+-                light,
+-                body_overlay(m, alpha),
+-                out,
+-            );
++            let color = body_color(m, alpha);
++            let overlay = body_overlay(m, alpha);
++            let mut draw = |uv, light, overlay, is_overlay| {
++                if let Some(paint) = part_paint {
++                    draw_normals(
++                        &model, base, ModelNormals::new(base), &poses, uv,
++                        Some(PartPaint { overlay: is_overlay, ..paint }),
++                        0.0, color, light, overlay, out,
++                    );
++                } else {
++                    put(skin, &model, base, &poses, uv, 0.0, color, light, overlay, out);
++                }
++            };
++            draw(uv, light, overlay, false);
+             if let Some(glow) = drawn.and_then(|(name, _)| emissive_uv(name)) {
+-                put(
+-                    skin,
+-                    &model,
+-                    base,
+-                    &poses,
+-                    glow,
+-                    0.0,
+-                    body_color(m, alpha),
+-                    FULL_BRIGHT,
+-                    0,
+-                    out,
+-                );
++                draw(glow, FULL_BRIGHT, 0, true);
+             }
+             if translucent_body(m) {
+                 mark_oit(&mut out[start..]);
+@@ -2198,31 +2231,23 @@ fn render_visible(
+         };
+         let start = out.len();
+         let first_job = skin.as_deref().map(|skin| skin.frame.jobs.len());
+-        put(
+-            &mut skin,
+-            &part,
+-            base,
+-            &layer_poses,
+-            uv,
+-            layer.scroll,
+-            layer.color,
+-            light,
+-            overlay,
+-            out,
+-        );
++        let mut draw = |uv, light, overlay| {
++            if let Some(paint) = part_paint.filter(|_| std::sync::Arc::ptr_eq(&part, &model)) {
++                draw_normals(
++                    &part, base, ModelNormals::new(base), &layer_poses, uv,
++                    Some(PartPaint { overlay: true, ..paint }),
++                    layer.scroll, layer.color, light, overlay, out,
++                );
++            } else {
++                put(
++                    &mut skin, &part, base, &layer_poses, uv,
++                    layer.scroll, layer.color, light, overlay, out,
++                );
++            }
++        };
++        draw(uv, light, overlay);
+         if let Some(glow) = emissive_uv(drawn) {
+-            put(
+-                &mut skin,
+-                &part,
+-                base,
+-                &layer_poses,
+-                glow,
+-                layer.scroll,
+-                layer.color,
+-                FULL_BRIGHT,
+-                0,
+-                out,
+-            );
++            draw(glow, FULL_BRIGHT, 0);
+         }
+         if translucent_layer(m, layer) {
+             mark_oit(&mut out[start..]);
+diff --git a/crates/horizon-optifine/src/cem/model.rs b/crates/horizon-optifine/src/cem/model.rs
+index 881e0a777c..6c1051929d 100644
+--- a/crates/horizon-optifine/src/cem/model.rs
++++ b/crates/horizon-optifine/src/cem/model.rs
+@@ -38,6 +38,8 @@ pub struct Quad {
+ #[derive(Clone, Debug, Default, PartialEq)]
+ pub struct Bone {
+     pub id: Option<String>,
++    /// A namespace-rooted Minecraft entity texture for this bone and its descendants.
++    pub texture: Option<String>,
+     /// `ModelPart` x, y, z: the pivot in the parent's frame, vanilla pixels. A part's bone
+     /// hangs at its `translate` below the vanilla part's own pivot; a submodel's at its own
+     /// `translate` below its parent bone.
+@@ -75,7 +77,7 @@ pub struct EntityModel {
+     pub texture: Option<String>,
+     pub parts: Vec<PartModel>,
+     /// What was left out and why: entries whose `.jpm` is missing or broken, a `baseId` naming
+-    /// no model, what is past the limits, per-part textures and sprites (not drawn yet).
++    /// no model, what is past the limits, unsupported per-part textures and sprites.
+     pub warnings: Vec<String>,
+ }
+ 
+@@ -133,7 +135,7 @@ impl Def for Layers {
+ /// kept one more for a number or boolean. On top of that every string read or copied out of the
+ /// files (part names, ids, animation targets and expressions, axes, numbers written as text)
+ /// costs one per started 64 bytes, each time. `cut`: something was left out for want of them;
+-/// `unread`: a part or submodel has a texture or sprites of its own.
++/// `unread`: a part or submodel has an unsupported texture path or sprites.
+ struct Bake {
+     left: usize,
+     cut: bool,
+@@ -254,7 +256,7 @@ pub fn parse_jem(
+             continue;
+         };
+         bake.left -= cost;
+-        let bone = bone(&layers, size, &mut bake);
++        let bone = bone(&layers, path, size, &mut bake);
+         let emptied = bake.cut && !has_quads(&bone);
+         bake.cut |= earlier;
+         if emptied {
+@@ -275,7 +277,7 @@ pub fn parse_jem(
+     }
+     if bake.unread {
+         out.warnings.push(format!(
+-            "{path}: per-part textures and sprites aren't drawn yet"
++            "{path}: unsupported per-part texture paths or sprites are not drawn"
+         ));
+     }
+     Ok(out)
+@@ -401,9 +403,13 @@ fn size2(v: Option<&Json>, bake: &mut Bake) -> Option<[f32; 2]> {
+ /// them, its submodels at their own translates below it — the poses the pack's animation
+ /// writes replace. The bone costs one of `bake.left`, which the caller makes sure is left, as
+ /// it pays for the walk of its keys; its strings, boxes and submodels what [`Bake`] says.
+-fn bone(def: &(impl Def + ?Sized), size: [f32; 2], bake: &mut Bake) -> Bone {
++fn bone(def: &(impl Def + ?Sized), path: &str, size: [f32; 2], bake: &mut Bake) -> Bone {
+     bake.left -= 1;
+-    bake.unread |= def.key("texture").is_some() || def.key("sprites").is_some();
++    let part_texture = string(def.key("texture"), bake)
++        .and_then(|value| texture(path, value))
++        .filter(|path| path.starts_with("assets/minecraft/textures/entity/"));
++    bake.unread |= def.key("texture").is_some() && part_texture.is_none()
++        || def.key("sprites").is_some();
+     let axes = string(def.key("invertAxis"), bake).unwrap_or("");
+     let invert = [axes.contains('x'), axes.contains('y'), axes.contains('z')];
+     let sign = |i: usize| if invert[i] { -1.0 } else { 1.0 };
+@@ -444,6 +450,7 @@ fn bone(def: &(impl Def + ?Sized), size: [f32; 2], bake: &mut Bake) -> Bone {
+         .unwrap_or_default();
+     let mut out = Bone {
+         id: string(def.key("id"), bake).map(str::to_owned),
++        texture: part_texture,
+         pivot: translate,
+         rotation: std::array::from_fn(|i| sign(i) * rotate[i].to_radians()),
+         scale,
+@@ -499,7 +506,7 @@ fn bone(def: &(impl Def + ?Sized), size: [f32; 2], bake: &mut Bake) -> Bone {
+             break;
+         }
+         bake.left -= sub.len();
+-        out.children.push(bone(sub, size, bake));
++        out.children.push(bone(sub, path, size, bake));
+     }
+     out
+ }
+@@ -1352,15 +1359,27 @@ mod tests {
+         assert_eq!(arm.attachments, [("fox_item".to_owned(), [0.0, -6.0, 1.0])]);
+     }
+ 
++    #[test]
++    fn namespace_rooted_entity_textures_are_captured_on_declaring_bones() {
++        let model = parse(r#"{"models": [{"part": "body",
++            "texture": "textures/entity/trader/pouches.png",
++            "submodels": [{}, {"texture": "minecraft:textures/entity/trader/buckle"}]}]}"#);
++        let body = &model.parts[0].bone;
++        assert_eq!(body.texture.as_deref(), Some("assets/minecraft/textures/entity/trader/pouches.png"));
++        assert!(body.children[0].texture.is_none());
++        assert_eq!(body.children[1].texture.as_deref(), Some("assets/minecraft/textures/entity/trader/buckle.png"));
++        assert!(model.warnings.is_empty());
++    }
++
+     #[test]
+     fn unread_keys_are_named_once() {
+         let model = parse(
+             r#"{"models": [{"part": "head", "texture": "a"}, {"part": "body", "sprites": []}]}"#,
+         );
+         assert_eq!(model.warnings.len(), 1);
+-        assert!(model.warnings[0].contains("textures and sprites"));
++        assert!(model.warnings[0].contains("texture paths or sprites"));
+         let model = parse(r#"{"models": [{"part": "head", "submodels": [{"texture": "a"}]}]}"#);
+         assert_eq!(model.warnings.len(), 1);
+-        assert!(model.warnings[0].contains("textures and sprites"));
++        assert!(model.warnings[0].contains("texture paths or sprites"));
+     }
+ }

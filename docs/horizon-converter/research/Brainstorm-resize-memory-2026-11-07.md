@@ -1,0 +1,7 @@
+# Resize/fullscreen memory research
+
+Source trace of exact daily r3 and nightly66 found transient old/new target overlap, not proof of permanent accumulation. PackPost::resize (daily pack_post.rs3656) creates a complete new double-buffered color/depth/mip target set while old self.targets and cached pass bind groups remain alive; replacement and forget_groups follow at3790/3802. Nightly retains this ordering. All relevant graphics/compute/entity/shadow/line/hand bind-group caches are cleared.
+
+CenterDepth::copy can retain one old depth texture until rebinding succeeds; it does not retain the old color collection. Renderer::resize atgfx.rs4430 also recreates global depth on equal dimensions, but event frequency and other recreation dependencies require checking before an early return. A whole-function same-size shortcut could incorrectly skip format, scale or other target changes; do not add it blindly.
+
+Next experiment: queued window→fullscreen→window cycles, capture physical-footprint high-water and settled values plus actual resize arguments. Prototype could clear caches and replace targets incrementally to reduce simultaneous ownership; GPU in-flight resource retention may prevent physical savings. Require lower peak, settled footprint near initial baseline, no validation errors and unchanged MakeUp images. No build, resize experiment, saving or persistent-leak claim exists yet.

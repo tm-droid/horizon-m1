@@ -1,0 +1,20 @@
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -1046,7 +1046,7 @@
+     /// The sections a shader pack's shadow camera sees (`pack_post::ShadowView`).
+     shadow_visible: Vec<resident::Visible>,
+     shadow_boxed: Vec<resident::Visible>,
+-    shadow_seen: std::collections::HashSet<SectionKey>,
++    shadow_seen: crate::fast_hash::FxHashSet<SectionKey>,
+     translucent_draws: Vec<(u64, usize, [u32; 5], (u32, Option<u32>))>,
+     origins: Vec<[f32; 4]>,
+     /// `DrawIndexedIndirectArgs` words: index count, instance count, first
+@@ -4156,7 +4156,7 @@
+             visible_lods: Vec::new(),
+             shadow_visible: Vec::new(),
+             shadow_boxed: Vec::new(),
+-            shadow_seen: std::collections::HashSet::new(),
++            shadow_seen: Default::default(),
+             translucent_draws: Vec::new(),
+             origins: Vec::new(),
+             draws: Vec::new(),

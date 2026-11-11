@@ -1,0 +1,168 @@
+--- a/crates/horizon-client-render/src/lod.rs
++++ b/crates/horizon-client-render/src/lod.rs
+@@ -1011,7 +1011,19 @@
+     approximate: AtomicBool,
+     /// On small machines, hold queued far meshing while near terrain loads.
+     mesh_held: AtomicBool,
++    /// The near terrain is loading: the far threads step behind it
++    /// (`horizon_threads::far_terrain_behind`) and come back once it is in.
++    near_loading: AtomicBool,
+ }
++/// Puts the calling far terrain thread behind the near terrain while it
++/// loads, and back once it is in. `behind`: where the thread is now.
++fn step_behind(shared: &Shared, behind: &mut bool) {
++    let loading = shared.near_loading.load(Ordering::Relaxed);
++    if loading != *behind {
++        horizon_threads::far_terrain_behind(loading);
++        *behind = loading;
++    }
++}
+ /// A background worker, sampling and meshing threads, and a bounded queue of
+ /// sample jobs (`sample_jobs`). Only the current view's quadtree and a
+ /// bounded set of visited summaries are retained.
+@@ -1139,6 +1151,7 @@
+             stop: AtomicBool::new(false),
+             approximate: AtomicBool::new(false),
+             mesh_held: AtomicBool::new(false),
++            near_loading: AtomicBool::new(false),
+         });
+         let worker = shared.clone();
+         let (tx, results) = mpsc::channel();
+@@ -1158,7 +1171,8 @@
+                     thread::Builder::new()
+                         .name("Far meshing".into())
+                         .spawn(move || {
+-                            horizon_threads::behind_server();
++                            horizon_threads::far_terrain_current();
++                            let mut behind = true;
+                             let mut mesher = mesh::Mesher::default();
+                             loop {
+                                 let job = {
+@@ -1189,6 +1203,7 @@
+                                     }
+                                     continue;
+                                 }
++                                step_behind(&shared, &mut behind);
+                                 let keep_finer = !job.finer.is_empty();
+                                 let input = job.snapshot.mesh_input(job.key, job.finer);
+                                 let columns = input.columns();
+@@ -1244,7 +1259,8 @@
+                     .name("Far terrain".into())
+                     .spawn(move || {
+                         // Ticks and frames come first (horizon_threads).
+-                        horizon_threads::behind_server();
++                        horizon_threads::far_terrain_current();
++                        let mut behind = true;
+                         let mut sampler = source.sampler();
+                         let count = sampling_threads(cores);
+                         let mut sampling = Vec::new();
+@@ -1258,7 +1274,8 @@
+                                 thread::Builder::new()
+                                     .name("Far sampling".into())
+                                     .spawn(move || {
+-                                        horizon_threads::behind_server();
++                                        horizon_threads::far_terrain_current();
++                                        let mut behind = true;
+                                         loop {
+                                             let key = {
+                                                 let mut jobs = shared.jobs.lock().unwrap();
+@@ -1281,6 +1298,7 @@
+                                                     jobs = shared.wake.wait(jobs).unwrap();
+                                                 }
+                                             };
++                                            step_behind(&shared, &mut behind);
+                                             let [x, _, z] = key.origin();
+                                             sample.set_approximate(
+                                                 shared.approximate.load(Ordering::Relaxed),
+@@ -1346,6 +1364,7 @@
+                                 }
+                             };
+                             let Some(job) = job else { continue };
++                            step_behind(&worker, &mut behind);
+                             let done = match job {
+                                 Job::Observe(key) => {
+                                     let chunk = worker.observed.lock().unwrap().remove(&key);
+@@ -2091,6 +2110,7 @@
+             self.held_sample_at = std::time::Instant::now();
+         }
+         self.near_loading = loading;
++        self.shared.near_loading.store(loading, Ordering::Relaxed);
+         let held = self.held();
+         if self.shared.mesh_held.swap(held, Ordering::Release) && !held {
+             self.shared.mesh_wake.notify_all();
+--- a/crates/horizon-threads/src/lib.rs
++++ b/crates/horizon-threads/src/lib.rs
+@@ -157,9 +157,73 @@
+ 
+ #[cfg(not(any(target_os = "linux", target_os = "android")))]
+ fn behind() -> bool {
++    false
++}
++
++/// Called by a far terrain thread as it starts (sampling, meshing and decorating
++/// distant tiles): work the near chunks, the ticks and the frames must never
++/// wait behind. On Linux and Android that is `behind_server`. On macOS and
++/// Windows, where `behind_server` changes nothing, the thread lowers itself one
++/// step: utility quality of service on macOS (background would throttle it to a
++/// crawl on battery) and below-normal priority on Windows, so the helpers that
++/// mesh and light the chunks around the player go first. Whether the OS took it.
++pub fn far_terrain_current() -> bool {
++    far()
++}
++
++#[cfg(not(any(target_vendor = "apple", windows)))]
++fn far() -> bool {
++    behind_server()
++}
++
++#[cfg(target_vendor = "apple")]
++fn far() -> bool {
++    // SAFETY: sets the calling thread's own QoS class; no pointers.
++    unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0) == 0 }
++}
++
++#[cfg(windows)]
++fn far() -> bool {
++    use windows_sys::Win32::System::Threading::{
++        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
++    };
++    // SAFETY: GetCurrentThread's pseudo handle needs no closing.
++    unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL) != 0 }
++}
++
++/// For a far terrain thread that `far_terrain_current` lowered: behind the
++/// near terrain while it loads (`behind`), and back to the default once it
++/// is in. Kept at utility quality of service for good, macOS ran the far
++/// terrain on the efficiency cores long after the near chunks were in, and
++/// it took minutes to settle. On Linux and Android an unprivileged thread
++/// can't raise its priority again: it stays behind (`behind_server`), as it
++/// always has there, and this changes nothing. Whether the OS took it.
++#[cfg(any(target_vendor = "apple", windows))]
++pub fn far_terrain_behind(behind: bool) -> bool {
++    // Both set the class or priority outright: calling again is harmless.
++    if behind { far() } else { far_back() }
++}
++
++#[cfg(not(any(target_vendor = "apple", windows)))]
++pub fn far_terrain_behind(_behind: bool) -> bool {
+     false
+ }
+ 
++#[cfg(target_vendor = "apple")]
++fn far_back() -> bool {
++    // SAFETY: sets the calling thread's own QoS class; no pointers.
++    unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_DEFAULT, 0) == 0 }
++}
++
++#[cfg(windows)]
++fn far_back() -> bool {
++    use windows_sys::Win32::System::Threading::{
++        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_NORMAL,
++    };
++    // SAFETY: GetCurrentThread's pseudo handle needs no closing.
++    unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL) != 0 }
++}
++
+ /// Run the calling thread only on a core nothing else wants: work that may
+ /// take seconds and that nothing waits for yet (the stronghold rings while a
+ /// world opens). The idle class on Linux, background quality of service on

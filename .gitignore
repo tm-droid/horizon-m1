@@ -1,0 +1,47 @@
+# Horizon work area: track code, docs, patches and small results only.
+# Builds, source clones, screenshots and mod/pack zips are regenerable and stay local.
+
+.DS_Store
+__pycache__/
+*.pyc
+*.bak
+*.bak-*
+*.bak[0-9]*
+*.orig
+*.rej
+/builds
+
+# outputs/: ignore everything, then allow text that records work.
+/outputs/**
+!/outputs/**/
+!/outputs/**/*.patch
+!/outputs/**/*.md
+!/outputs/**/*-stack.txt
+!/outputs/**/*.py
+!/outputs/**/*.sh
+!/outputs/horizon-native/**/*.rs
+!/outputs/bench-2026-11-10/runs/*.json
+!/outputs/bench-2026-11-10/visual-options.png
+!/outputs/bench-2026-11-10/crop-1to1-*.png
+
+# Heavy or third-party trees under outputs/, never tracked even for allowed types.
+/outputs/horizon-src-nightly/
+/outputs/horizon-converter/*/
+/outputs/horizon-compatibility/*/
+**/*.noindex/
+**/*.app/
+**/mod-src/
+**/src-pristine/
+**/isolated-libraries/
+**/downloads/
+**/toolchain/
+**/probe/
+/outputs/horizon-runtime/m1-performance*/
+/outputs/horizon-runtime/nightly-*/
+/outputs/horizon-runtime/ab-*/
+/outputs/horizon-native/u11-*/
+/outputs/bench-2026-11-10/gallery-*/
+/outputs/bench-2026-11-10/verify-*/
+/outputs/bench-2026-11-10/shots/
+/outputs/bench-2026-11-10/modshots/
+/outputs/bench-2026-11-10/logs/

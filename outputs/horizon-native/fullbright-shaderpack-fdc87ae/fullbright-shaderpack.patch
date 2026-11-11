@@ -1,0 +1,89 @@
+diff -ruN a/crates/horizon-client-render/src/gfx/pack_atlas.rs b/crates/horizon-client-render/src/gfx/pack_atlas.rs
+--- a/crates/horizon-client-render/src/gfx/pack_atlas.rs	2026-11-10 11:03:26
++++ b/crates/horizon-client-render/src/gfx/pack_atlas.rs	2026-11-10 14:22:59
+@@ -691,7 +691,7 @@
+              hz_uv_scale = hz_origin.w > 0.0 ? uintBitsToFloat(floatBitsToUint(hz_origin.w) & 0xff800000u) : fract(abs(hz_origin.w));\n    \
+              hz_mid = vec2(0.5);\n    \
+              hz_MultiTexCoord0 = vec4((hz_cell + clamp(vec2(hz_v_uv) * hz_uv_scale, 0.0, 1.0)) * hz_scale, 0.0, 1.0);\n    \
+-             hz_MultiTexCoord1 = vec4(float(hz_v_light.y), float(hz_v_light.x), 0.0, 1.0);\n    \
++             hz_MultiTexCoord1 = vec4(max(float(hz_v_light.y), 240.0 * hz_fullbright), float(hz_v_light.x), 0.0, 1.0);\n    \
+              hz_MultiTexCoord2 = hz_MultiTexCoord1;\n    \
+              hz_Color = vec4(hz_v_color.rgb, {color_a});\n    \
+              hz_Normal = vec3(0.0, 1.0, 0.0);\n    \
+diff -ruN a/crates/horizon-client-render/src/gfx/pack_entities.rs b/crates/horizon-client-render/src/gfx/pack_entities.rs
+--- a/crates/horizon-client-render/src/gfx/pack_entities.rs	2026-11-10 11:03:26
++++ b/crates/horizon-client-render/src/gfx/pack_entities.rs	2026-11-10 14:22:59
+@@ -84,7 +84,7 @@
+          }}\n    \
+          hz_Vertex = vec4(hz_v_pos, 1.0);\n    \
+          hz_MultiTexCoord0 = vec4(hz_v_uv, 0.0, 1.0);\n    \
+-         hz_MultiTexCoord1 = vec4(float(hz_v_light.y), float(hz_v_light.x), 0.0, 1.0);\n    \
++         hz_MultiTexCoord1 = vec4(max(float(hz_v_light.y), 240.0 * hz_fullbright), float(hz_v_light.x), 0.0, 1.0);\n    \
+          hz_MultiTexCoord2 = hz_MultiTexCoord1;\n    \
+          hz_Color = hz_v_color;\n",
+         p0 = corner(0, "pos"),
+diff -ruN a/crates/horizon-client-render/src/gfx/pack_uniforms.rs b/crates/horizon-client-render/src/gfx/pack_uniforms.rs
+--- a/crates/horizon-client-render/src/gfx/pack_uniforms.rs	2026-11-10 11:03:26
++++ b/crates/horizon-client-render/src/gfx/pack_uniforms.rs	2026-11-10 14:22:59
+@@ -48,6 +48,9 @@
+     pub hide_gui: bool,
+     /// The brightness option, 0..1.
+     pub brightness: f32,
++    /// Horizon Extras' fullbright: terrain and entity block light reads 240 in gbuffers
++    /// programs (`hz_fullbright`) and `nightVision` is at least 1.
++    pub fullbright: bool,
+     /// The biome at the camera (3.4): registry id, `CAT_*`, `PPT_*`, temperature, downfall.
+     pub biome: i32,
+     pub biome_category: i32,
+@@ -354,6 +357,7 @@
+     "logicalHeightLimit",
+     "hasSkylight",
+     "hasCeiling",
++    "hz_fullbright",
+     "cloudTime",
+     "isElytraFlying",
+     "cloudHeight",
+@@ -910,7 +914,12 @@
+                 "entityColor" => Value::f(&[0.0; 4]),
+                 "isEyeInWater" => Value::i(&[inputs.eye_in]),
+                 "blindness" => Value::f(&[inputs.blindness]),
+-                "nightVision" => Value::f(&[frame.night_vision]),
++                "nightVision" => Value::f(&[if inputs.fullbright {
++                    frame.night_vision.max(1.0)
++                } else {
++                    frame.night_vision
++                }]),
++                "hz_fullbright" => Value::f(&[f32::from(inputs.fullbright)]),
+                 "darknessFactor" => Value::f(&[frame.darkness.0]),
+                 "darknessLightFactor" => Value::f(&[frame.darkness.1]),
+                 "screenBrightness" => Value::f(&[inputs.brightness]),
+diff -ruN a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+--- a/crates/horizon-client-render/src/gfx.rs	2026-11-10 11:03:26
++++ b/crates/horizon-client-render/src/gfx.rs	2026-11-10 14:22:59
+@@ -10983,7 +10983,10 @@
+                 depth,
+                 &view_target,
+                 frame,
+-                &frame.pack,
++                &pack_uniforms::PackInputs {
++                    fullbright: self.fullbright,
++                    ..frame.pack
++                },
+                 size,
+                 [self.config.width, self.config.height],
+                 &pages,
+diff -ruN a/crates/horizon-shaders/src/translate/mod.rs b/crates/horizon-shaders/src/translate/mod.rs
+--- a/crates/horizon-shaders/src/translate/mod.rs	2026-11-10 11:03:26
++++ b/crates/horizon-shaders/src/translate/mod.rs	2026-11-10 14:22:59
+@@ -318,6 +318,11 @@
+             }
+         }
+     }
++    // The game's own vertex prelude may read `hz_fullbright` (Horizon Extras' fullbright, forced
++    // block light): it joins the block whether or not the pack declares it.
++    if gbuffers.is_some_and(|g| g.body.contains("hz_fullbright")) {
++        uniforms.insert("hz_fullbright".to_owned(), "float".to_owned());
++    }
+     // A game-given attribute may read the previous frame's matrices (`at_velocity`): they join
+     // the block when the pack declares that attribute, whether or not it declares them.
+     if let Some(inputs) = gbuffers {

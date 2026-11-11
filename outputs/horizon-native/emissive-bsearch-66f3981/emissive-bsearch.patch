@@ -1,0 +1,247 @@
+diff --git a/crates/horizon-client-render/src/assets.rs b/crates/horizon-client-render/src/assets.rs
+index 6060cd2..5ac5c9f 100644
+--- a/crates/horizon-client-render/src/assets.rs
++++ b/crates/horizon-client-render/src/assets.rs
+@@ -97,6 +97,8 @@ pub struct RenderAssets {
+     pub sprite_layers: std::collections::BTreeMap<String, u32>,
+     /// OptiFine's emissive block overlays: base sprite and overlay sprite names.
+     pub emissive: Vec<(String, String)>,
++    /// `native_emissive::optifine_table` of `emissive`: the frame's overlay table without native pairs.
++    pub emissive_table: Vec<[u32; 4]>,
+     pub translucent_layers: Vec<bool>,
+     /// Each layer's `MipmapGenerator` settings.
+     pub sprite_mips: Vec<crate::mipmap::Settings>,
+@@ -412,6 +414,7 @@ impl RenderAssets {
+             model_placements: models.placements,
+             model_gallery: models.states,
+             animations: sprites.animations,
++            emissive_table: crate::native_emissive::optifine_table(&sprites.layers, &emissive),
+             sprite_layers: sprites.layers,
+             emissive,
+             translucent_layers: sprites.translucent,
+diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+index 60ac43d..874e638 100644
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -7357,6 +7357,8 @@ impl Renderer {
+                 0,
+             ],
+             emissive_layers: {
++                // terrain.wgsl binary-searches this table: sorted by base layer, no repeats.
++                debug_assert!(frame.emissive_layers.windows(2).all(|w| w[0][0] < w[1][0]));
+                 let mut layers = [[0; 4]; crate::native_emissive::MAX];
+                 for (to, from) in layers.iter_mut().zip(frame.emissive_layers) {
+                     *to = *from;
+diff --git a/crates/horizon-client-render/src/native_emissive.rs b/crates/horizon-client-render/src/native_emissive.rs
+index ce60644..82c661c 100644
+--- a/crates/horizon-client-render/src/native_emissive.rs
++++ b/crates/horizon-client-render/src/native_emissive.rs
+@@ -128,6 +128,41 @@ pub fn table<'a>(
+     by_base.into_values().collect()
+ }
+ 
++/// The OptiFine half of [`table`], flagged [`CUTOUT`]: it only changes when resources reload, so
++/// `RenderAssets` builds it once.
++pub fn optifine_table(
++    layers: &BTreeMap<String, u32>,
++    optifine: &[(String, String)],
++) -> Vec<[u32; 4]> {
++    let optifine = optifine.iter().map(|(b, o)| (b.as_str(), o.as_str()));
++    mappings(layers, optifine)
++        .into_iter()
++        .map(|[b, o, z, w]| [b, o | CUTOUT, z, w])
++        .collect()
++}
++
++/// [`table`] with the OptiFine half prebuilt by [`optifine_table`]: the same pairs in the same
++/// order, without the per-frame name lookups. Without native requests (the usual frame) the
++/// prebuilt half is the table.
++pub fn table_cached<'a>(
++    layers: &BTreeMap<String, u32>,
++    native: impl IntoIterator<Item = (&'a str, &'a str)>,
++    optifine: &[[u32; 4]],
++) -> Vec<[u32; 4]> {
++    let mut native = native.into_iter().take(NATIVE).peekable();
++    if native.peek().is_none() {
++        return optifine.to_vec();
++    }
++    let mut by_base: BTreeMap<u32, [u32; 4]> = BTreeMap::new();
++    for pair in mappings(layers, native) {
++        by_base.insert(pair[0], pair);
++    }
++    for &pair in optifine {
++        by_base.entry(pair[0]).or_insert(pair);
++    }
++    by_base.into_values().collect()
++}
++
+ /// Only loaded base/overlay pairs are sent to the GPU; sorted for vertex lookup.
+ pub fn mappings<'a>(
+     layers: &BTreeMap<String, u32>,
+@@ -305,3 +340,112 @@ mod tests {
+         );
+     }
+ }
++
++#[cfg(test)]
++mod emissive_lookup_tests {
++    use super::*;
++
++    /// terrain.wgsl's old per-vertex scan.
++    fn linear(table: &[[u32; 4]], n: usize, layer: u32) -> u32 {
++        for pair in &table[..n.min(128)] {
++            if pair[0] == layer {
++                return pair[1];
++            }
++            if pair[0] > layer {
++                break;
++            }
++        }
++        u32::MAX
++    }
++
++    /// terrain.wgsl's lower-bound search, step for step (8 bounded halvings).
++    fn bsearch(table: &[[u32; 4]], n: usize, layer: u32) -> u32 {
++        let n = n.min(128);
++        let (mut lo, mut hi) = (0, n);
++        let mut s = 0;
++        while s < 8 && lo < hi {
++            let mid = (lo + hi) / 2;
++            if table[mid][0] < layer {
++                lo = mid + 1;
++            } else {
++                hi = mid;
++            }
++            s += 1;
++        }
++        if lo < n && table[lo][0] == layer { table[lo][1] } else { u32::MAX }
++    }
++
++    fn rng(seed: &mut u64) -> u64 {
++        *seed ^= *seed << 13;
++        *seed ^= *seed >> 7;
++        *seed ^= *seed << 17;
++        *seed
++    }
++
++    #[test]
++    fn the_search_is_the_scan_for_every_table_size_and_layer() {
++        let mut seed = 0x9e3779b97f4a7c15;
++        for n in 0..=MAX {
++            for round in 0..20 {
++                // Strictly increasing keys, as `table` builds them, with gaps.
++                let mut key = (rng(&mut seed) % 5) as u32;
++                let mut table = vec![[0u32; 4]; MAX];
++                for pair in table.iter_mut().take(n) {
++                    *pair = [key, key + 1000 + round, 0, 0];
++                    key += 1 + (rng(&mut seed) % 4) as u32;
++                }
++                for layer in 0..key + 3 {
++                    assert_eq!(linear(&table, n, layer), bsearch(&table, n, layer), "n={n} layer={layer}");
++                }
++                assert_eq!(linear(&table, n, 0x7fff), bsearch(&table, n, 0x7fff));
++            }
++        }
++    }
++
++    #[test]
++    fn eight_halvings_cover_the_largest_table() {
++        assert!(MAX <= 128, "terrain.wgsl and entity.wgsl size the table at 128");
++        assert!((MAX + 1).next_power_of_two().trailing_zeros() <= 8);
++    }
++
++    #[test]
++    fn the_wgsl_uses_the_search_and_the_same_table_size() {
++        let wgsl = include_str!("terrain.wgsl");
++        assert!(wgsl.contains("array<vec4<u32>, 128>"));
++        assert!(wgsl.contains("emi_s < 8u"));
++        assert!(!wgsl.contains("i < min(globals.emissive_count.x, 128u)"));
++    }
++
++    #[test]
++    fn tables_are_strictly_increasing_by_base_layer() {
++        let layers: BTreeMap<String, u32> = (0..60u32).map(|i| (format!("s{i}"), 200 - i * 3)).collect();
++        let optifine: Vec<(String, String)> =
++            (0..20).map(|i| (format!("s{}", 59 - i), format!("s{}", i))).collect();
++        let native: Vec<(String, String)> =
++            (0..10).map(|i| (format!("s{}", 30 + i), "s0".to_owned())).collect();
++        let t = table(&layers, native.iter().map(|(a, b)| (a.as_str(), b.as_str())), &optifine);
++        assert!(!t.is_empty());
++        assert!(t.windows(2).all(|w| w[0][0] < w[1][0]), "sorted and unique: the shader searches it");
++    }
++
++    #[test]
++    fn the_cached_table_is_the_table() {
++        let layers: BTreeMap<String, u32> = (0..80u32).map(|i| (format!("s{i}"), (i * 7) % 83)).collect();
++        let optifine: Vec<(String, String)> = (0..40).map(|i| (format!("s{i}"), format!("s{}", 79 - i))).collect();
++        let cached = optifine_table(&layers, &optifine);
++        let none: [(&str, &str); 0] = [];
++        assert_eq!(table(&layers, none, &optifine), table_cached(&layers, none, &cached));
++        // A native pair for a base the pack also pairs wins in both.
++        let native = [("s3", "s70"), ("s50", "s2"), ("missing", "s2"), ("s4", "gone")];
++        assert_eq!(table(&layers, native, &optifine), table_cached(&layers, native, &cached));
++        // More than the 32 native requests: the same first 32.
++        let many: Vec<(String, String)> = (0..60).map(|i| (format!("s{i}"), "s79".to_owned())).collect();
++        let many = many.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>();
++        assert_eq!(
++            table(&layers, many.iter().copied(), &optifine),
++            table_cached(&layers, many.iter().copied(), &cached)
++        );
++        // No OptiFine pairs and no layers at all.
++        assert_eq!(table(&BTreeMap::new(), none, &[]), table_cached(&BTreeMap::new(), none, &[]));
++    }
++}
+diff --git a/crates/horizon-client-render/src/terrain.wgsl b/crates/horizon-client-render/src/terrain.wgsl
+index d845e23..67029d5 100644
+--- a/crates/horizon-client-render/src/terrain.wgsl
++++ b/crates/horizon-client-render/src/terrain.wgsl
+@@ -563,18 +563,23 @@ fn terrain_vertex(position: vec3<f32>, uv: vec2<f32>, layer: u32, color: vec4<f3
+     out.uv = uv;
+     out.layer = layer;
+     out.emissive_layer = 0xffffffffu;
+-    // The pairs are sorted by base layer: stop at the first past this one.
++    // The pairs are sorted by base layer and unique (`native_emissive::table`): a lower-bound
++    // search finds the same first match the linear scan did. At most 128 pairs: 8 halvings.
+     let sprite_layer = layer & 0x7fffu;
+-    for (var i = 0u; i < min(globals.emissive_count.x, 128u); i++) {
+-        let pair = globals.emissive_layers[i];
+-        if pair.x == sprite_layer {
+-            out.emissive_layer = pair.y;
+-            break;
+-        }
+-        if pair.x > sprite_layer {
+-            break;
++    let emi_n = min(globals.emissive_count.x, 128u);
++    var emi_lo = 0u;
++    var emi_hi = emi_n;
++    for (var emi_s = 0u; emi_s < 8u && emi_lo < emi_hi; emi_s++) {
++        let emi_mid = (emi_lo + emi_hi) / 2u;
++        if globals.emissive_layers[emi_mid].x < sprite_layer {
++            emi_lo = emi_mid + 1u;
++        } else {
++            emi_hi = emi_mid;
+         }
+     }
++    if emi_lo < emi_n && globals.emissive_layers[emi_lo].x == sprite_layer {
++        out.emissive_layer = globals.emissive_layers[emi_lo].y;
++    }
+     let block = max(f32(light.y), dynamic_block_light(pos));
+     out.color = vec4(color.rgb, 1.0) * sample_lightmap(f32(light.x) / 16.0, block / 16.0);
+     out.scene = vec2(block / 16.0, f32(light.x) / 16.0);
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+index 21b8376..24d09bc 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -16199,10 +16199,10 @@ impl Game<'_> {
+             let mut requests = Vec::new();
+             self.native_emissive(&mut requests);
+             // Native mods' overlays first, then the packs' OptiFine emissive blocks.
+-            horizon_client::native_emissive::table(
++            horizon_client::native_emissive::table_cached(
+                 &self.pack.render.sprite_layers,
+                 requests,
+-                &self.pack.render.emissive,
++                &self.pack.render.emissive_table,
+             )
+         } else {
+             Vec::new()

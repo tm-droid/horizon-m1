@@ -1,0 +1,26 @@
+diff --git a/crates/horizon-client-render/src/gfx/arena.rs b/crates/horizon-client-render/src/gfx/arena.rs
+index 9ca776f..41a9fd6 100644
+--- a/crates/horizon-client-render/src/gfx/arena.rs
++++ b/crates/horizon-client-render/src/gfx/arena.rs
+@@ -99,10 +99,10 @@ impl Page {
+ 
+ /// An arena with this many bytes in free ranges, at least half of its pages,
+ /// has a page worth emptying (`Arena::sparsest`).
+-const COMPACT_MIN_FREE: u64 = 128 << 20;
++const COMPACT_MIN_FREE: u64 = 32 << 20;
+ /// A page of at least this many bytes shrinks (`Arena::oversized`) when a page
+ /// of its ranges in use halves it or is `PAGE_BYTES` smaller.
+-const SHRINK_MIN_BYTES: u64 = 64 << 20;
++const SHRINK_MIN_BYTES: u64 = 32 << 20;
+ 
+ /// Terrain vertices in pages of at most `page_limit` vertices (devices cap
+ /// buffer sizes): a section's vertices sit in one page.
+@@ -1443,7 +1443,7 @@ mod tests {
+             })];
+             arena.oversized().map(|(_, to)| to)
+         };
+-        let least = (64u64 << 20).div_ceil(24).next_multiple_of(GRAIN);
++        let least = SHRINK_MIN_BYTES.div_ceil(24).next_multiple_of(GRAIN);
+         let quarter = least / 4 / GRAIN * GRAIN;
+         assert_eq!(shrinks(least, quarter, false), Some(2 * quarter));
+         assert_eq!(shrinks(least, quarter + GRAIN, false), None);

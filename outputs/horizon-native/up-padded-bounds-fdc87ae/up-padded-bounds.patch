@@ -1,0 +1,102 @@
+diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+index 9256ab8f91..ed1eb850e5 100644
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -8402,12 +8402,23 @@ impl Renderer {
+                         .push_in(group, v.distance, s.page, start, len, [0; 3]);
+                 }
+                 if let Some(c) = &mut cull {
+-                    c.drawn(i, v.slot, indices, cull::SECTION_BOX);
++                    c.drawn(
++                        i,
++                        v.slot,
++                        indices,
++                        cull::section_box(self.sections.bounds(v.slot)),
++                    );
+                 }
+             } else if let Some(c) = &mut cull {
+                 // One test sees the section's draws in both passes.
+                 let total: usize = runs.iter().map(|r| r.2).sum();
+-                if let Some(test) = c.deferred(i, v.slot, total, indices, cull::SECTION_BOX) {
++                if let Some(test) = c.deferred(
++                    i,
++                    v.slot,
++                    total,
++                    indices,
++                    cull::section_box(self.sections.bounds(v.slot)),
++                ) {
+                     for &(group, start, len) in runs {
+                         if group == 0 {
+                             phase2_opaque += len;
+diff --git a/crates/horizon-client-render/src/gfx/cull.rs b/crates/horizon-client-render/src/gfx/cull.rs
+index fc47f795ae..0ccba9fd2e 100644
+--- a/crates/horizon-client-render/src/gfx/cull.rs
++++ b/crates/horizon-client-render/src/gfx/cull.rs
+@@ -10,8 +10,8 @@
+ //! second pass, draws the sections whose box was seen; the others' draws have
+ //! an instance count of 0.
+ //!
+-//! The picture stays the one without culling: the boxes (grown by a block,
+-//! the farthest a block model reaches out of its cell) are drawn front faces
++//! The picture stays the one without culling: the boxes around the mesh's
++//! geometry (padded by a block) are drawn front faces
+ //! only, so a fragment is the box's nearest point on its pixel, and the
+ //! fragment shader runs only where the depth test passes (forced early), so a
+ //! section is left out only where all of its fragments would fail the depth
+@@ -45,6 +45,15 @@ use std::sync::{
+ const WORDS: u64 = 5 * 4;
+ /// A tested section's box, around its origin: its cell grown by a block.
+ pub const SECTION_BOX: [[f32; 3]; 2] = [[-1.0; 3], [17.0; 3]];
++/// Mesh bounds already contain `BOUNDS_PAD`; grow them to a block of padding
++/// in total, keeping the box's faces off the geometry. Without mesh bounds,
++/// keep the section cell grown by a block, as before.
++pub fn section_box(bounds: Option<[glam::Vec3; 2]>) -> [[f32; 3]; 2] {
++    bounds.map_or(SECTION_BOX, |[low, high]| {
++        let pad = glam::Vec3::splat(1.0 - crate::mesher::SectionMesh::BOUNDS_PAD);
++        [(low - pad).to_array(), (high + pad).to_array()]
++    })
++}
+ /// The bit that marks a far tile's slot (`Renderer::tile_cull_slot`): tiles
+ /// count their slots apart from the sections' resident ones.
+ pub const TILE: u32 = 1 << 31;
+diff --git a/crates/horizon-client-render/src/gfx/cull.wgsl b/crates/horizon-client-render/src/gfx/cull.wgsl
+index a9c8df75ba..0788016fda 100644
+--- a/crates/horizon-client-render/src/gfx/cull.wgsl
++++ b/crates/horizon-client-render/src/gfx/cull.wgsl
+@@ -16,8 +16,8 @@ struct Globals {
+ // `place`): the first pass's first draw, both passes' draw counts (the
+ // second's in the high 16 bits), the second pass's first draw. No draws:
+ // phase 1 drew it, and the test only tells whether it is still in sight.
+-// Then its box's lowest and highest corner around the origin (a section's:
+-// -1 and 17, `SECTION_BOX`).
++// Then its box's lowest and highest corner around the origin: a section's
++// padded mesh bounds, or -1 and 17 (`SECTION_BOX`) without mesh bounds.
+ struct Test {
+     data: vec4<u32>,
+     low: vec4<f32>,
+@@ -53,8 +53,8 @@ fn corner(origin: vec3<f32>, low: vec3<f32>, high: vec3<f32>, c: u32) -> vec3<f3
+     );
+ }
+ 
+-// Each tested section's or far tile's box, grown by a block (block models
+-// reach one block out of their cell), drawn after phase 1 against its depth
++// Each tested section's or far tile's geometry box, padded by a block,
++// drawn after phase 1 against its depth
+ // with back faces culled: a front face fragment that passes the depth test
+ // is the box's nearest point on that pixel in front of phase 1's depth, so
+ // the section may show there. A box failing everywhere would have every
+diff --git a/crates/horizon-client-render/src/gfx/resident.rs b/crates/horizon-client-render/src/gfx/resident.rs
+index 2bce45e49b..bf1c0c9909 100644
+--- a/crates/horizon-client-render/src/gfx/resident.rs
++++ b/crates/horizon-client-render/src/gfx/resident.rs
+@@ -124,6 +124,10 @@ impl<T> Resident<T> {
+     pub fn get_mut(&mut self, slot: u32) -> &mut T {
+         &mut self.items[slot as usize].1
+     }
++    /// Padded mesh bounds of the section in `slot`, relative to its origin.
++    pub fn bounds(&self, slot: u32) -> Option<[Vec3; 2]> {
++        self.bounds[slot as usize]
++    }
+     /// Sections from now on count from `min_y` (a level of another column).
+     pub fn set_min_y(&mut self, min_y: i32) {
+         self.min_y = min_y;

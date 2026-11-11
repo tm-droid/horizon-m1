@@ -1,0 +1,108 @@
+--- a/crates/horizon-client-render/src/particles.rs
++++ b/crates/horizon-client-render/src/particles.rs
+@@ -1221,6 +1221,12 @@
+ /// `ParticleLimit.SPORE_BLOSSOM`, the only limited particle.
+ const SPORE_BLOSSOM_LIMIT: usize = 1000;
+ const PARTICLE_LIGHT_CACHE_SIZE: usize = 64;
++/// Half-extent bound of a particle's quads around their centre, for the view cull: a quad of
++/// half-size `size` reaches `sqrt(2) * size` (about 1.415) from the centre in any rotation;
++/// the extra 0.05 absorbs f32 rounding of the box test.
++fn cull_reach(size: f32) -> f32 {
++    size.abs() * 1.5 + 0.05
++}
+ 
+ #[derive(Clone, Copy)]
+ struct CachedParticleLight {
+@@ -4374,12 +4380,30 @@
+ 
+     /// Camera-facing quads (`QuadParticleRenderState.renderRotatedQuad`).
+     pub fn render(
++        &self,
++        camera: DVec3,
++        yaw: f32,
++        pitch: f32,
++        partial: f32,
++        light_at: &dyn Fn([i32; 3]) -> u8,
++        out: &mut Vec<Vertex>,
++    ) {
++        self.render_in_view(camera, yaw, pitch, partial, light_at, &|_, _| true, out);
++    }
++
++    /// `render`, skipping a particle whose quads cannot reach the view: `in_view(min, max)` tests
++    /// the camera-relative box around the particle's centre. Skipped particles still simulate
++    /// (this reads them only), and the quads kept keep their order, so translucent layering is
++    /// the same as drawing every particle.
++    #[allow(clippy::too_many_arguments)]
++    pub fn render_in_view(
+         &self,
+         camera: DVec3,
+         yaw: f32,
+         pitch: f32,
+         partial: f32,
+         light_at: &dyn Fn([i32; 3]) -> u8,
++        in_view: &dyn Fn(FVec3, FVec3) -> bool,
+         out: &mut Vec<Vertex>,
+     ) {
+         // Camera.setRotation: rotationYXZ(PI - yRot, -xRot, 0).
+@@ -4425,6 +4449,10 @@
+                 base
+             };
+             let size = p.quad_size(partial);
++            let reach = FVec3::splat(cull_reach(size));
++            if !in_view(center - reach, center + reach) {
++                continue;
++            }
+             let mut alpha = p.rgba[3];
+             // OverlayParticle.extract: the flash fades as it pulses.
+             if p.ty == ParticleType::Flash {
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -10899,13 +10899,22 @@
+         laps.lap("eg_objects");
+         self.mark_stage(out.len(), "PARTICLES");
+         let world = &self.world;
++        // A native shader pack draws these quads into its shadow maps too: keep them all then.
++        // `native_shaders.native` is `shader_packs::picks_native_pack` as of the last frame's
++        // `shader_pack_inputs`, so the per-frame env/path/stat lookups are not repeated here.
++        let view = if self.native_shaders.native {
++            None
++        } else {
++            self.view_frustum
++        };
+         self.particles
+-            .render(
++            .render_in_view(
+                 camera,
+                 self.yaw,
+                 self.pitch,
+                 alpha as f32,
+                 &|b| world.light(b[0], b[1], b[2]),
++                &|min, max| view.is_none_or(|v| v.intersects(min, max)),
+                 &mut out,
+             );
+         laps.lap("eg_particles");
+--- a/crates/horizon-client/src/game/shader_packs.rs
++++ b/crates/horizon-client/src/game/shader_packs.rs
+@@ -185,7 +185,9 @@
+             Dim::End => 1,
+         };
+         let path = Self::shader_packs_dir().join(&name);
+-        if horizon_shader_api::package::is_pack(&path) {
++        // Cached for `picks_native_pack`'s other per-frame reader, the particle view cull.
++        self.native_shaders.native = horizon_shader_api::package::is_pack(&path);
++        if self.native_shaders.native {
+             // One of Horizon's own packs (game/native_shaders.rs).
+             self.tick_native_shader_pack(&path);
+         } else if let Some(renderer) = &mut self.renderer
+--- a/crates/horizon-client/src/game/native_shaders.rs
++++ b/crates/horizon-client/src/game/native_shaders.rs
+@@ -23,6 +23,9 @@
+ pub(super) struct NativeShaders {
+     /// The pack's name in `shaderpacks/`, of either kind (`game/shader_packs.rs`); empty: none.
+     pub picked: String,
++    /// `picked` is one of Horizon's own packs (not a `shaders/` pack): set each frame by
++    /// `shader_pack_inputs`, false until it first runs for a new pick.
++    pub native: bool,
+     /// The pack's files when it was last read (`fingerprint`).
+     stamp: Option<u64>,
+     looked: Option<Instant>,

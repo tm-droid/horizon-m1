@@ -1,0 +1,104 @@
+--- a/crates/horizon-client-render/src/assets.rs
++++ b/crates/horizon-client-render/src/assets.rs
+@@ -103,9 +103,10 @@
+     /// Each layer's `MipmapGenerator` settings.
+     pub sprite_mips: Vec<crate::mipmap::Settings>,
+     /// The resource packs' LabPBR maps (normals, specular), layer by layer at `pbr_size`:
+-    /// empty when they ship none.
+-    pub pbr_normals: Vec<u8>,
+-    pub pbr_specular: Vec<u8>,
++    /// empty when they ship none. Like [`Self::pixels`], kept lz4-compressed once a renderer
++    /// has them: the GPU holds the arrays, and the copies only serve a renderer made again.
++    pub pbr_normals: SpritePixels,
++    pub pbr_specular: SpritePixels,
+     pub pbr_size: u32,
+     /// OptiFine connected textures (empty without `optifine/ctm` files).
+     pub connected: crate::connected::ConnectedTextures,
+@@ -371,6 +372,8 @@
+         }
+         // `finish` grows the buffer by doubling: keep only the bytes in use.
+         sprites.pixels.shrink_to_fit();
++        sprites.normals.shrink_to_fit();
++        sprites.specular.shrink_to_fit();
+         Ok(Self {
+             sprite_size: sprites.size,
+             sprite_minimum_size: sprites.minimum_size,
+@@ -386,8 +389,8 @@
+             emissive,
+             translucent_layers: sprites.translucent,
+             sprite_mips: sprites.mips,
+-            pbr_normals: sprites.normals,
+-            pbr_specular: sprites.specular,
++            pbr_normals: SpritePixels::new(sprites.normals),
++            pbr_specular: SpritePixels::new(sprites.specular),
+             pbr_size: sprites.pbr_size,
+             connected,
+             fusion,
+@@ -503,4 +506,44 @@
+         assert_eq!(*stored.get(), pixels);
+         assert_eq!(stored.len(), pixels.len());
+     }
+-}
++
++    fn wait_packed(stored: &SpritePixels) {
++        let started = std::time::Instant::now();
++        while stored.0.raw.lock().unwrap().is_some() {
++            assert!(started.elapsed().as_secs() < 10, "packing never finished");
++            std::thread::yield_now();
++        }
++    }
++
++    #[test]
++    fn lab_pbr_maps_come_back_the_same_once_packed() {
++        // A normal map (flat, with a bumpy patch) and a specular map, 16 px, 3 layers: the
++        // fillers `lay_out` uses for layers without a map, and varied texels.
++        let texels = 16 * 16 * 3;
++        let normals: Vec<u8> = (0..texels)
++            .flat_map(|i| if i % 7 == 0 { [120, 130, 250, 255] } else { [128, 128, 255, 255] })
++            .collect();
++        let specular: Vec<u8> = (0..texels)
++            .flat_map(|i| [(i * 3 % 251) as u8, (i % 97) as u8, 0, 255])
++            .collect();
++        for map in [normals, specular] {
++            let stored = SpritePixels::new(map.clone());
++            assert_eq!(*stored.get(), map);
++            stored.pack();
++            wait_packed(&stored);
++            assert_eq!(*stored.get(), map);
++            assert_eq!(stored.len(), map.len());
++        }
++    }
++
++    #[test]
++    fn absent_lab_pbr_maps_stay_empty_and_pack_to_nothing() {
++        // No pack ships LabPBR maps: `with_pbr` sees an empty slice and skips them.
++        let none = SpritePixels::new(Vec::new());
++        assert!(none.is_empty());
++        none.pack();
++        none.pack();
++        assert!(none.get().is_empty());
++        assert!(none.0.packed.get().is_none());
++    }
++}
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -14880,6 +14880,8 @@
+         if self.renderer.is_some() {
+             self.gui.atlas.pack_pixels();
+             self.pack.render.pixels.pack();
++            self.pack.render.pbr_normals.pack();
++            self.pack.render.pbr_specular.pack();
+         }
+         self.gui.atlas.font.begin_frame();
+         self.glint_frame = self.capture_glint_frame();
+@@ -19832,8 +19834,8 @@
+             (&pack.forcefield.2, pack.forcefield.0),
+         )
+         .with_pbr(
+-            &assets.pbr_normals,
+-            &assets.pbr_specular,
++            &assets.pbr_normals.get(),
++            &assets.pbr_specular.get(),
+             assets.pbr_size,
+             assets.texture_layers,
+         )

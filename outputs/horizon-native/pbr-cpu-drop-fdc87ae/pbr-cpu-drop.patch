@@ -1,0 +1,126 @@
+diff --git a/crates/horizon-client-render/src/assets.rs b/crates/horizon-client-render/src/assets.rs
+index f3cca96..86dedd8 100644
+--- a/crates/horizon-client-render/src/assets.rs
++++ b/crates/horizon-client-render/src/assets.rs
+@@ -97,9 +97,10 @@ pub struct RenderAssets {
+     /// Each layer's `MipmapGenerator` settings.
+     pub sprite_mips: Vec<crate::mipmap::Settings>,
+     /// The resource packs' LabPBR maps (normals, specular), layer by layer at `pbr_size`:
+-    /// empty when they ship none.
+-    pub pbr_normals: Vec<u8>,
+-    pub pbr_specular: Vec<u8>,
++    /// empty when they ship none. Like [`Self::pixels`], kept lz4-compressed once a renderer
++    /// has them: the GPU holds the arrays, and the copies only serve a renderer made again.
++    pub pbr_normals: SpritePixels,
++    pub pbr_specular: SpritePixels,
+     pub pbr_size: u32,
+     /// OptiFine connected textures (empty without `optifine/ctm` files).
+     pub connected: crate::connected::ConnectedTextures,
+@@ -395,6 +396,8 @@ impl RenderAssets {
+         }
+         // `finish` grows the buffer by doubling: keep only the bytes in use.
+         sprites.pixels.shrink_to_fit();
++        sprites.normals.shrink_to_fit();
++        sprites.specular.shrink_to_fit();
+         Ok(Self {
+             sprite_size: sprites.size,
+             sprite_minimum_size: sprites.minimum_size,
+@@ -410,8 +413,8 @@ impl RenderAssets {
+             emissive,
+             translucent_layers: sprites.translucent,
+             sprite_mips: sprites.mips,
+-            pbr_normals: sprites.normals,
+-            pbr_specular: sprites.specular,
++            pbr_normals: SpritePixels::new(sprites.normals),
++            pbr_specular: SpritePixels::new(sprites.specular),
+             pbr_size: sprites.pbr_size,
+             connected,
+             fusion,
+@@ -523,4 +526,44 @@ mod tests {
+         assert_eq!(*stored.get(), pixels);
+         assert_eq!(stored.len(), pixels.len());
+     }
++
++    fn wait_packed(stored: &super::SpritePixels) {
++        let started = std::time::Instant::now();
++        while stored.0.raw.lock().unwrap().is_some() {
++            assert!(started.elapsed().as_secs() < 10, "packing never finished");
++            std::thread::yield_now();
++        }
++    }
++
++    #[test]
++    fn lab_pbr_maps_come_back_the_same_once_packed() {
++        // A normal map (flat, with a bumpy patch) and a specular map, 16 px, 3 layers: the
++        // fillers `lay_out` uses for layers without a map, and varied texels.
++        let texels = 16 * 16 * 3;
++        let normals: Vec<u8> = (0..texels)
++            .flat_map(|i| if i % 7 == 0 { [120, 130, 250, 255] } else { [128, 128, 255, 255] })
++            .collect();
++        let specular: Vec<u8> = (0..texels)
++            .flat_map(|i| [(i * 3 % 251) as u8, (i % 97) as u8, 0, 255])
++            .collect();
++        for map in [normals, specular] {
++            let stored = super::SpritePixels::new(map.clone());
++            assert_eq!(*stored.get(), map);
++            stored.pack();
++            wait_packed(&stored);
++            assert_eq!(*stored.get(), map);
++            assert_eq!(stored.len(), map.len());
++        }
++    }
++
++    #[test]
++    fn absent_lab_pbr_maps_stay_empty_and_pack_to_nothing() {
++        // No pack ships LabPBR maps: `with_pbr` sees an empty slice and skips them.
++        let none = super::SpritePixels::new(Vec::new());
++        assert!(none.is_empty());
++        none.pack();
++        none.pack();
++        assert!(none.get().is_empty());
++        assert!(none.0.packed.get().is_none());
++    }
+ }
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+index 4bc0d5c..9987842 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -15552,6 +15552,8 @@ impl Game<'_> {
+         if self.renderer.is_some() {
+             self.gui.atlas.pack_pixels();
+             self.pack.render.pixels.pack();
++            self.pack.render.pbr_normals.pack();
++            self.pack.render.pbr_specular.pack();
+         }
+         // Before any text of this frame: a full glyph region starts over.
+         self.gui.atlas.font.begin_frame();
+diff --git a/crates/horizon-client-render/examples/scene_replay.rs b/crates/horizon-client-render/examples/scene_replay.rs
+index eb141d8..936fa82 100644
+--- a/crates/horizon-client-render/examples/scene_replay.rs
++++ b/crates/horizon-client-render/examples/scene_replay.rs
+@@ -199,8 +199,8 @@ fn replay(window: Arc<Window>) -> Result<(), Box<dyn std::error::Error>> {
+         (&zero[..], 1),
+     )
+     .with_pbr(
+-        &render.pbr_normals,
+-        &render.pbr_specular,
++        &render.pbr_normals.get(),
++        &render.pbr_specular.get(),
+         render.pbr_size,
+         render.texture_layers,
+     );
+diff --git a/crates/horizon-client/src/game/loading_window.rs b/crates/horizon-client/src/game/loading_window.rs
+index 1a1ad76..28d1cfc 100644
+--- a/crates/horizon-client/src/game/loading_window.rs
++++ b/crates/horizon-client/src/game/loading_window.rs
+@@ -15,8 +15,8 @@ pub(super) fn prepare_renderer_textures(
+         (&pack.forcefield.2, pack.forcefield.0),
+     )
+     .with_pbr(
+-        &assets.pbr_normals,
+-        &assets.pbr_specular,
++        &assets.pbr_normals.get(),
++        &assets.pbr_specular.get(),
+         assets.pbr_size,
+         assets.texture_layers,
+     )

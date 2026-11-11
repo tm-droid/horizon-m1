@@ -1,0 +1,278 @@
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index a36df67..18fb343 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -417,7 +417,63 @@ struct Pass {
+     viewport: Option<[f32; 3]>,
+ }
+ 
++/// What decides whether consecutive programs share one render pass (see `run_lengths`).
++struct RunShape<'a> {
++    merges: bool,
++    writes: &'a [(u32, usize)],
++    reads: u16,
++    written: u16,
++}
++
++/// Splits consecutive programs into runs one render pass can draw, in order. A program joins
++/// the run before it only if both `merge`, write exactly the same (location, buffer) outputs
++/// (so identical attachments), and none samples a buffer another in the run writes. Everything
++/// else, in particular any program that copies, clears or snapshots anything when bound, stays
++/// a pass of its own.
++fn run_lengths(shapes: &[RunShape<'_>]) -> Vec<usize> {
++    let mut lengths = Vec::new();
++    let mut at = 0;
++    while at < shapes.len() {
++        let head = &shapes[at];
++        let mut end = at + 1;
++        if head.merges {
++            let (mut reads, mut written) = (head.reads, head.written);
++            while let Some(next) = shapes.get(end) {
++                if !next.merges
++                    || next.writes != head.writes
++                    || next.reads & written != 0
++                    || next.written & reads != 0
++                {
++                    break;
++                }
++                reads |= next.reads;
++                written |= next.written;
++                end += 1;
++            }
++        }
++        lengths.push(end - at);
++        at = end;
++    }
++    lengths
++}
++
+ impl Pass {
++    /// Binding this program records nothing on the encoder and its draws need no barrier from
++    /// a neighbour's: no copies, image copies, snapshots, stand-in or storage images, storage
++    /// buffers, mip chains, flips, compute, sink or partial viewport, and not in shadow space.
++    fn merges(&self) -> bool {
++        self.copies == 0
++            && self.image_copies == 0
++            && self.snapshots == 0
++            && self.flip == 0
++            && self.mipmaps == 0
++            && self.compute.is_empty()
++            && self.images.is_empty()
++            && !self.buffers
++            && !self.sink
++            && self.viewport.is_none()
++            && !self.group.shadow()
++    }
+     fn render(&self) -> &wgpu::RenderPipeline {
+         match &self.pipeline {
+             Pipeline::Render(p) => p,
+@@ -3463,57 +3519,97 @@ impl PackPost {
+             return;
+         };
+         let geometry = &entities.geometry;
+-        for (program, pass) in entities.passes.iter_mut().enumerate() {
+-            let Some(pass) = pass.as_mut().filter(|_| entities.late[program] == late) else {
+-                continue;
+-            };
+-            let mut draws = geometry
+-                .draws
++        // The programs with draws this call, in program order.
++        let active: Vec<usize> = (0..entities.passes.len())
++            .filter(|&program| {
++                entities.passes[program].is_some()
++                    && entities.late[program] == late
++                    && geometry
++                        .draws
++                        .iter()
++                        .any(|d| d.pack && d.program == program)
++            })
++            .collect();
++        let lengths = {
++            let shapes: Vec<RunShape<'_>> = active
+                 .iter()
+-                .filter(|d| d.pack && d.program == program)
+-                .peekable();
+-            if draws.peek().is_none() {
+-                continue;
+-            }
+-            let group = self.bind(device, queue, encoder, pass, size);
+-            let portal_group = self.portal_group(
+-                device,
+-                queue,
+-                encoder,
+-                pass,
+-                size,
+-                geometry
+-                    .draws
+-                    .iter()
+-                    .any(|d| d.pack && d.program == program && d.portal),
+-            );
++                .map(|&program| {
++                    let pass = entities.passes[program].as_ref().expect("active");
++                    RunShape {
++                        merges: pass.merges(),
++                        writes: &pass.writes,
++                        reads: pass.reads,
++                        written: pass.written,
++                    }
++                })
++                .collect();
++            run_lengths(&shapes)
++        };
++        let mut at = 0;
++        for length in lengths {
++            let run = &active[at..at + length];
++            at += length;
++            // A merged program records nothing on the encoder when bound (no copies, images or
++            // stand-ins), so binding the whole run before its pass opens leaves every encoder
++            // command where it was. Each program's uniforms are its own, written before submit.
++            // The end portal's sprite copy, if it changes, also lands before the pass opens.
++            let groups: Vec<_> = run
++                .iter()
++                .map(|&program| {
++                    let pass = entities.passes[program].as_mut().expect("active");
++                    let group = self.bind(device, queue, encoder, pass, size);
++                    let portal_group = self.portal_group(
++                        device,
++                        queue,
++                        encoder,
++                        pass,
++                        size,
++                        geometry
++                            .draws
++                            .iter()
++                            .any(|d| d.pack && d.program == program && d.portal),
++                    );
++                    (group, portal_group)
++                })
++                .collect();
+             {
+-                let mut rp = self.begin(encoder, pass);
+-                rp.set_pipeline(pass.render());
+-                rp.set_bind_group(0, &group, &[]);
+-                if pass.buffers
+-                    && let Some(g) = &self.buffers.group
+-                {
+-                    rp.set_bind_group(4, g, &[]);
+-                }
+-                rp.set_bind_group(1, &geometry.table_group, &[]);
+-                rp.set_vertex_buffer(0, geometry.vertices());
+-                rp.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
+-                let mut on_portal = false;
+-                for d in draws {
+-                    if let Some(portal) = &portal_group
+-                        && d.portal != on_portal
++                let head = entities.passes[run[0]].as_ref().expect("active");
++                let mut rp = self.begin(encoder, head);
++                for (&program, (group, portal_group)) in run.iter().zip(&groups) {
++                    let pass = entities.passes[program].as_ref().expect("active");
++                    rp.set_pipeline(pass.render());
++                    rp.set_bind_group(0, group, &[]);
++                    if pass.buffers
++                        && let Some(g) = &self.buffers.group
+                     {
+-                        rp.set_bind_group(0, if d.portal { portal } else { &group }, &[]);
+-                        on_portal = d.portal;
++                        rp.set_bind_group(4, g, &[]);
+                     }
+-                    if pass.draw {
+-                        rp.set_bind_group(2, &geometry.group, &[geometry.offset(d.slot)]);
++                    rp.set_bind_group(1, &geometry.table_group, &[]);
++                    rp.set_vertex_buffer(0, geometry.vertices());
++                    rp.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
++                    let mut on_portal = false;
++                    for d in geometry
++                        .draws
++                        .iter()
++                        .filter(|d| d.pack && d.program == program)
++                    {
++                        if let Some(portal) = portal_group
++                            && d.portal != on_portal
++                        {
++                            rp.set_bind_group(0, if d.portal { portal } else { group }, &[]);
++                            on_portal = d.portal;
++                        }
++                        if pass.draw {
++                            rp.set_bind_group(2, &geometry.group, &[geometry.offset(d.slot)]);
++                        }
++                        rp.draw_indexed(0..d.quads * 6, d.base as i32, 0..1);
+                     }
+-                    rp.draw_indexed(0..d.quads * 6, d.base as i32, 0..1);
+                 }
+             }
+-            self.mips_valid &= !pass.written;
++            for &program in run {
++                let pass = entities.passes[program].as_ref().expect("active");
++                self.mips_valid &= !pass.written;
++            }
+         }
+         self.entities = Some(entities);
+     }
+@@ -5611,3 +5707,67 @@ mod atlas_name_post_tests;
+ 
+ #[cfg(test)]
+ mod unknown_sampler_terrain_tests;
++
++#[cfg(test)]
++mod pass_merge_tests {
++    use super::{RunShape, run_lengths};
++
++    const A: &[(u32, usize)] = &[(0, 0), (1, 1)];
++    const B: &[(u32, usize)] = &[(0, 0), (1, 3)];
++
++    fn shape(merges: bool, writes: &'static [(u32, usize)], reads: u16, written: u16) -> RunShape<'static> {
++        RunShape { merges, writes, reads, written }
++    }
++
++    #[test]
++    fn same_outputs_merge_and_order_is_kept() {
++        let s = [shape(true, A, 0, 0b11), shape(true, A, 0b100, 0b11), shape(true, A, 0, 0b11)];
++        assert_eq!(run_lengths(&s), vec![3]);
++    }
++
++    #[test]
++    fn different_outputs_split() {
++        let s = [shape(true, A, 0, 0b11), shape(true, B, 0, 0b1011), shape(true, B, 0, 0b1011)];
++        assert_eq!(run_lengths(&s), vec![1, 2]);
++    }
++
++    #[test]
++    fn a_program_that_samples_what_the_run_wrote_starts_a_new_pass() {
++        let s = [shape(true, A, 0, 0b11), shape(true, A, 0b10, 0b11)];
++        assert_eq!(run_lengths(&s), vec![1, 1]);
++        // And the reverse: the new program writes what the run sampled.
++        let s = [shape(true, A, 0b1000, 0b11), shape(true, A, 0, 0b1000)];
++        assert_eq!(run_lengths(&s), vec![1, 1]);
++    }
++
++    #[test]
++    fn a_program_that_cannot_merge_is_alone_and_splits_the_run() {
++        let s = [
++            shape(true, A, 0, 0b11),
++            shape(true, A, 0, 0b11),
++            shape(false, A, 0, 0b11),
++            shape(true, A, 0, 0b11),
++            shape(true, A, 0, 0b11),
++        ];
++        assert_eq!(run_lengths(&s), vec![2, 1, 2]);
++        let s = [shape(false, A, 0, 0b11), shape(false, A, 0, 0b11)];
++        assert_eq!(run_lengths(&s), vec![1, 1]);
++    }
++
++    #[test]
++    fn every_program_is_in_exactly_one_run() {
++        let mut seed = 12345u32;
++        for _ in 0..500 {
++            let mut s = Vec::new();
++            for _ in 0..(seed % 9) {
++                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
++                let writes = if seed >> 29 & 1 == 0 { A } else { B };
++                s.push(shape(seed >> 28 & 3 != 0, writes, (seed >> 8 & 0xf) as u16, (seed >> 12 & 0xf) as u16));
++            }
++            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
++            let lengths = run_lengths(&s);
++            assert_eq!(lengths.iter().sum::<usize>(), s.len());
++            assert!(lengths.iter().all(|&l| l >= 1));
++        }
++    }
++}

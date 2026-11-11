@@ -1,0 +1,60 @@
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -7328,7 +7328,15 @@
+         // Where the tail of materials the classic and the improved passes
+         // both draw ends: the shadows, particles and items count back from it.
+         let base_quads = world_quads - oit_entity_quads;
+-        let native_clouds = self.native.as_ref().is_none_or(|n| n.vanilla_clouds);
++        // Iris clouds=off suppresses this mesh, including preparation and upload.
++        // Packs with a cloud program still need the mesh as that program's input.
++        let iris_clouds = frame.title
++            || self
++                .pack_post
++                .as_ref()
++                .and_then(|p| p.1.as_ref())
++                .is_none_or(|p| !p.clouds_off());
++        let native_clouds = self.native.as_ref().is_none_or(|n| n.vanilla_clouds) && iris_clouds;
+         let cloud_quads = if let Some(input) = frame.clouds.as_ref().filter(|_| native_clouds) {
+             let (rebuilt, uniform) =
+                 crate::spans::time("clouds", || self.cloud_mesh.prepare(input));
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -517,6 +517,8 @@
+     /// The pack has `gbuffers_clouds`, even one that writes nothing (a pack drawing its own
+     /// clouds discards vanilla's), or `clouds=off`: the game's clouds are not drawn.
+     hides_clouds: bool,
++    /// Explicit clouds=off; unlike hides_clouds this excludes real cloud programs.
++    clouds_off: bool,
+     /// The pack has a sky (`gbuffers_skybasic`) or sun and moon (`gbuffers_skytextured`)
+     /// program: vanilla's stays hidden even when the program writes nothing.
+     hides_sky: bool,
+@@ -2080,7 +2082,8 @@
+             ids: None,
+             cull: false,
+         });
+-        let hides_clouds = post.clouds_off || post.clouds.is_some() && cloud_geometry.is_some();
++        let clouds_off = post.clouds_off;
++        let hides_clouds = clouds_off || post.clouds.is_some() && cloud_geometry.is_some();
+         let weather_geometry = world.weather.then(|| Geometry {
+             buffers: &entity_buffers,
+             table: None,
+@@ -2414,6 +2417,7 @@
+             lines,
+             line_draw: None,
+             hides_clouds,
++            clouds_off,
+             hides_sky,
+             hides_celestial,
+             sky_clear,
+@@ -3351,6 +3355,11 @@
+         self.hides_clouds
+     }
+ 
++    /// Whether the pack explicitly disables the game's cloud mesh.
++    pub fn clouds_off(&self) -> bool {
++        self.clouds_off
++    }
++
+     /// The clouds to draw this frame (`None`: none).
+     pub fn set_clouds(&mut self, clouds: Option<Clouds>) {
+         self.cloud_draw = clouds.filter(|c| c.quads > 0);

@@ -1,0 +1,191 @@
+diff --git a/crates/horizon-client-render/src/dynamic_light.rs b/crates/horizon-client-render/src/dynamic_light.rs
+--- a/crates/horizon-client-render/src/dynamic_light.rs
++++ b/crates/horizon-client-render/src/dynamic_light.rs
+@@ -13,6 +13,8 @@
+ 
+ /// Lights the shaders read: `Globals.dynamic_lights` in gfx.rs, terrain.wgsl and entity.wgsl.
+ pub const MAX: usize = 16;
++/// The first four nonlocal sources are also available to opting-in legacy shader packs.
++pub const PACK_MAX: usize = 4;
+ /// Camera-relative position and radius; RGB intensity in a second vec4. The shaders read it as a flat
+ /// `array<vec4<f32>, 32>` (nested arrays need ARB_arrays_of_arrays, absent from GL below 4.3).
+ pub type Colored = [[f32; 4]; 2];
+@@ -93,11 +95,17 @@
+ pub struct Source {
+     pub at: DVec3,
+     pub level: u8,
++    /// Legacy packs handle the camera player's held lights themselves.
++    pub local_player: bool,
+ }
+ 
+ /// The [`MAX`] sources nearest `camera` within reach, as the shaders read them: camera-relative
+-/// position and level. Overwrites `out`.
+-pub fn select(sources: &[Source], camera: DVec3, out: &mut Vec<[f32; 4]>) {
++/// position and level. Overwrites `out` and returns the nearest nonlocal sources for packs.
++pub fn select(
++    sources: &[Source],
++    camera: DVec3,
++    out: &mut Vec<[f32; 4]>,
++) -> [[f32; 4]; PACK_MAX] {
+     out.clear();
+     let key = |s: &Source| s.at.distance_squared(camera);
+     let mut near: Vec<&Source> = sources
+@@ -105,10 +113,18 @@
+         .filter(|s| s.level > 0 && key(s) <= REACH * REACH)
+         .collect();
+     near.sort_by(|a, b| key(a).total_cmp(&key(b)));
+-    out.extend(near.into_iter().take(MAX).map(|s| {
++    let mut pack = [[0.0; 4]; PACK_MAX];
++    let mut pack_count = 0;
++    for s in near.into_iter().take(MAX) {
+         let p = (s.at - camera).as_vec3();
+-        [p.x, p.y, p.z, f32::from(s.level.min(15))]
+-    }));
++        let light = [p.x, p.y, p.z, f32::from(s.level.min(15))];
++        out.push(light);
++        if !s.local_player && pack_count < PACK_MAX {
++            pack[pack_count] = light;
++            pack_count += 1;
++        }
++    }
++    pack
+ }
+ 
+ /// The block light a vertex at `pos` (camera-relative) gets from `lights`, 0 to 15: the WGSL
+@@ -160,22 +176,26 @@
+             .map(|i| Source {
+                 at: camera + DVec3::new(f64::from(i), 0.0, 0.0),
+                 level: 14,
++                local_player: i == 0,
+             })
+             .collect();
+         sources.push(Source {
+             at: camera + DVec3::new(0.5, 0.0, 0.0),
+             level: 0,
++            local_player: false,
+         });
+         sources.push(Source {
+             at: camera + DVec3::new(0.0, 0.0, 200.0),
+             level: 15,
++            local_player: false,
+         });
+         let mut out = Vec::new();
+-        select(&sources, camera, &mut out);
++        let pack = select(&sources, camera, &mut out);
+         assert_eq!(out.len(), MAX);
+         assert_eq!(out[0], [0.0, 0.0, 0.0, 14.0]);
+         assert_eq!(out[MAX - 1][0], (MAX - 1) as f32);
+-        select(&[], camera, &mut out);
++        assert_eq!(pack.as_slice(), &out[1..=PACK_MAX]);
++        assert_eq!(select(&[], camera, &mut out), [[0.0; 4]; PACK_MAX]);
+         assert!(out.is_empty());
+     }
+ 
+diff --git a/crates/horizon-client/src/game/dynamic_lights.rs b/crates/horizon-client/src/game/dynamic_lights.rs
+--- a/crates/horizon-client/src/game/dynamic_lights.rs
++++ b/crates/horizon-client/src/game/dynamic_lights.rs
+@@ -53,6 +53,7 @@
+                 Source {
+                     at: DVec3::new(feet.x, feet.y + 1.2, feet.z),
+                     level,
++                    local_player: true,
+                 },
+                 item,
+             ));
+@@ -70,6 +71,7 @@
+                 Source {
+                     at: DVec3::new(at.x, at.y + f64::from(m.height()) * 0.6, at.z),
+                     level,
++                    local_player: false,
+                 },
+                 item,
+             ));
+@@ -85,6 +87,7 @@
+                 Source {
+                     at: DVec3::new(at.x, at.y + 0.25, at.z),
+                     level,
++                    local_player: false,
+                 },
+                 item,
+             ));
+@@ -101,7 +104,7 @@
+             .into_iter()
+             .map(|(s, _)| s)
+             .collect();
+-        dynamic_light::select(&sources, camera, &mut out);
++        self.pack_dynamic_lights = dynamic_light::select(&sources, camera, &mut out);
+         self.dynamic_lights = out;
+     }
+ }
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -2521,6 +2521,7 @@
+     /// Horizon Extras' dynamic lights this frame (`dynamic_lights.rs`), and how brightly each
+     /// item glows (built the first time the extra is on).
+     dynamic_lights: Vec<[f32; 4]>,
++    pack_dynamic_lights: [[f32; 4]; horizon_client::dynamic_light::PACK_MAX],
+     luminance: std::cell::OnceCell<horizon_client::dynamic_light::Luminance>,
+     /// Name tags drawn over everything (`RenderPipelines.TEXT_SEE_THROUGH`).
+     see_through_vertices: Vec<Vertex>,
+@@ -15357,6 +15358,7 @@
+         let see_through = std::mem::take(&mut self.see_through_vertices);
+         if title {
+             self.dynamic_lights.clear();
++            self.pack_dynamic_lights = Default::default();
+         } else {
+             self.gather_dynamic_lights(camera, alpha);
+         }
+@@ -18263,6 +18265,7 @@
+             last_device_recovery: None,
+             entity_vertices: Vec::new(),
+             dynamic_lights: Vec::new(),
++            pack_dynamic_lights: Default::default(),
+             luminance: Default::default(),
+             see_through_vertices: Vec::new(),
+             shadow_only_vertices: Default::default(),
+diff --git a/crates/horizon-client/src/game/shader_packs.rs b/crates/horizon-client/src/game/shader_packs.rs
+--- a/crates/horizon-client/src/game/shader_packs.rs
++++ b/crates/horizon-client/src/game/shader_packs.rs
+@@ -354,6 +354,7 @@
+             rainfall: info.map_or(0.0, |b| b.downfall),
+             held_items,
+             held_light,
++            nonlocal_lights: self.pack_dynamic_lights,
+             right_handed: !self.settings.main_hand_left,
+             on_ground: self.player.as_ref().is_some_and(|p| p.ground.on_ground),
+             min_y: self.world.shape.min_y,
+diff --git a/crates/horizon-client-render/src/gfx/pack_uniforms.rs b/crates/horizon-client-render/src/gfx/pack_uniforms.rs
+--- a/crates/horizon-client-render/src/gfx/pack_uniforms.rs
++++ b/crates/horizon-client-render/src/gfx/pack_uniforms.rs
+@@ -35,6 +35,8 @@
+     /// `heldItemId`, `heldItemId2` (item.properties, 5.3) and `heldBlockLightValue(2)`.
+     pub held_items: [i32; 2],
+     pub held_light: [i32; 2],
++    /// Legacy pack opt-in: camera-relative xyz and light level for each nonlocal source.
++    pub nonlocal_lights: [[f32; 4]; crate::dynamic_light::PACK_MAX],
+     /// `isRightHanded` (the Main Hand option) and `is_on_ground`.
+     pub right_handed: bool,
+     pub on_ground: bool,
+@@ -216,6 +218,8 @@
+     "heldItemId2",
+     "heldBlockLightValue",
+     "heldBlockLightValue2",
++    "horizonDynamicLightCount",
++    "horizonDynamicLights",
+     "renderStage",
+     "biome",
+     "biome_category",
+@@ -576,6 +580,12 @@
+                 "heldItemId2" => Value::i(&[inputs.held_items[1]]),
+                 "heldBlockLightValue" => Value::i(&[inputs.held_light[0]]),
+                 "heldBlockLightValue2" => Value::i(&[inputs.held_light[1]]),
++                "horizonDynamicLightCount" => Value::i(&[inputs
++                    .nonlocal_lights
++                    .iter()
++                    .take_while(|light| light[3] > 0.0)
++                    .count() as i32]),
++                "horizonDynamicLights" => Value::f(inputs.nonlocal_lights.as_flattened()),
+                 "isElytraFlying" => Value::i(&[inputs.elytra_flying as i32]),
+                 "cloudHeight" => Value::f(&[inputs.cloud_height]),
+                 "cloudTime" => Value::f(&[inputs.cloud_time]),

@@ -1,0 +1,31 @@
+diff --git a/third_party/wgpu-hal/src/metal/device.rs b/third_party/wgpu-hal/src/metal/device.rs
+index d7287b9..01f16b5 100644
+--- a/third_party/wgpu-hal/src/metal/device.rs
++++ b/third_party/wgpu-hal/src/metal/device.rs
+@@ -90,6 +90,16 @@ fn create_depth_stencil_desc(
+     desc
+ }
+ 
++/// Horizon: naga's MSL loop bounding (a `uint2` counter compared and decremented on every
++/// iteration of every loop, against Metal's compiler treating a never-ending loop as undefined)
++/// is off unless `HORIZON_MSL_LOOP_BOUNDING=1`. Horizon's own shaders and shader packs loop a
++/// bounded number of times; GL runs the same packs without any bound. A shader that does loop
++/// forever hangs the GPU until Metal's command-buffer timeout instead.
++fn msl_loop_bounding() -> bool {
++    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ON.get_or_init(|| std::env::var("HORIZON_MSL_LOOP_BOUNDING").is_ok_and(|v| v == "1"))
++}
++
+ #[allow(
+     clippy::mut_from_ref,
+     reason = "MTLBuffer shared contents are writable through `&MTLBuffer`"
+@@ -221,7 +231,8 @@ impl super::Device {
+                         binding_array: naga::proc::BoundsCheckPolicy::Unchecked,
+                     },
+                     zero_initialize_workgroup_memory: stage.zero_initialize_workgroup_memory,
+-                    force_loop_bounding: stage.module.runtime_checks.force_loop_bounding,
++                    force_loop_bounding: stage.module.runtime_checks.force_loop_bounding
++                        && msl_loop_bounding(),
+                     task_dispatch_limits: stage
+                         .module
+                         .runtime_checks
