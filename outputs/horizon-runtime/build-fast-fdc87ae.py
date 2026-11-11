@@ -116,8 +116,9 @@ def main():
     STACK = NATIVE / a.stack
     if not os.environ.get("HORIZON_TEST_QUEUE"):
         sys.exit("set HORIZON_TEST_QUEUE")
-    if shutil.disk_usage(RUNTIME).free < 8 * 2**30:
-        sys.exit("need 8 GiB")
+    min_free = float(os.environ.get("HORIZON_MIN_FREE_GIB", "8"))
+    if shutil.disk_usage(RUNTIME).free < min_free * 2**30:
+        sys.exit(f"need {min_free:g} GiB")
     rev = run(["git", "-C", str(SOURCE), "rev-parse", "HEAD"], capture_output=True).stdout.strip()
     if rev != REVISION or run(["git", "-C", str(SOURCE), "status", "--porcelain"], capture_output=True).stdout:
         sys.exit("pristine source changed")

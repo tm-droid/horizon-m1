@@ -30,6 +30,7 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - U4 m1prof + U7b invalid (unpatched; build script silently skipped patches, see outputs/horizon-native/u7c-rebuild-diff.md); redo.
 
 ## Log
+- 2026-11-12 U7e BLOCKED: screen locked 05:02-07:53+ (no frames presented, benches invalid). Built STK/NOP/NOV/NOU variants (rc0) ready in versions/; resume cmds in outputs/horizon-native/u7e-bisect.md. U7c commit 0bfea4b; dragon check pending.
 - 2026-11-11 U3 done: docs/research/upstream-perf-2026-11-11.md; nightly still fdc87ae (2026-11-08), main f23176af +4947; BACKPORT 2a33c013, 562175df, 81a8d04a, 203b3ac8, 89733192; suspects 6a8ea6fc (shadow cull), 8794c49a+4c0ef1d7 (trilinear samplers), 3c794c28; 957ecaff (#12448 fix) SKIP, 4a701935 moot
 - 2026-11-11 U2 done: docs/research/native-mods-compare-2026-11-11.md; ADOPT zoomify (MCRE pin ok), official minimap, dynamic-fps (idle cap off), BetterDynamicLights 1.0.3 non-shader only; DROP zoom-pilot, fast-items, dynamic-fps-f42 patch, fps_overlay; only MCRE-Mods has newer commits (23, none in dirs we use); daniliammo hash already 40 chars and = local HEAD, upstream repo 404, lock unchanged
 - U1: bench.py +F7 (env.K=V already supported); baseline tag u1 x3 makeup/packs valid; medians static avg/1%low: makeup 44.1/27.7, packs 85.6/32.5; env plumbing verified via ps eww (WORKER_THREADS=6).
