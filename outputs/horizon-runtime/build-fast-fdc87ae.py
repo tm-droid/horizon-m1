@@ -109,6 +109,8 @@ def main():
     ap.add_argument("--stack", required=True)
     ap.add_argument("--tag", required=True)
     ap.add_argument("--per-mod", action="store_true", help="apply each mod alone first (diagnostics)")
+    ap.add_argument("--profile", default="fast", help="cargo profile; 'm1' = release + thin LTO, cgu=1, no incremental")
+    ap.add_argument("--rustflags", default=None, help="RUSTFLAGS for cargo, e.g. '-C target-cpu=apple-m1'")
     a = ap.parse_args()
     global STACK
     STACK = NATIVE / a.stack
@@ -176,9 +178,17 @@ def main():
     run(["rsync", "-a", "-c", "--delete", "--exclude=/target", str(work) + "/", str(STABLE) + "/"])
     work = STABLE
     env = clean_env()
+    cfg = []
+    if a.rustflags:
+        env["RUSTFLAGS"] = a.rustflags
+    if a.profile == "m1":
+        cfg = ["--config", 'profile.m1.inherits="release"', "--config", 'profile.m1.lto="thin"',
+               "--config", "profile.m1.codegen-units=" + os.environ.get("HORIZON_M1_CGU", "1"),
+               "--config", "profile.m1.incremental=false", "--config", "profile.m1.opt-level=3"]
+        env["CARGO_INCREMENTAL"] = "0"
     if a.tests:
         crates = ["horizon-client-render", "horizon-client", "horizon-threads", "horizon-optifine", "horizon-shaders"]
-        cmd = [str(TOOLCHAIN / "bin/cargo"), "test", "--no-fail-fast", "--locked", "--profile", "fast",
+        cmd = [str(TOOLCHAIN / "bin/cargo"), "test", "--no-fail-fast", "--locked", "--profile", a.profile] + cfg + [
                "--manifest-path", str(work / "Cargo.toml")] + [x for c in crates for x in ("-p", c)] + ["--lib", "--bins", "--tests"]
         with open(lab / "cargo-test.log", "w") as log:
             rc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
@@ -187,7 +197,7 @@ def main():
     dest = DATA / "versions" / version
     if dest.exists():
         sys.exit(f"exists: {version}")
-    cmd = [str(TOOLCHAIN / "bin/cargo"), "build", "--locked", "--profile", "fast",
+    cmd = [str(TOOLCHAIN / "bin/cargo"), "build", "--locked", "--profile", a.profile, *cfg,
            "--manifest-path", str(work / "Cargo.toml"), "-p", "horizon-client", "--bin", "horizon-client"]
     t0 = time.time()
     with open(lab / "cargo-build.log", "w") as log:
@@ -198,7 +208,7 @@ def main():
     new = dest.with_name(dest.name + ".new")
     shutil.rmtree(new, ignore_errors=True)
     run(["/bin/cp", "-cR", str(BASE), str(new)])
-    shutil.copy2(CARGO_TARGET / "fast/horizon-client", new / "horizon-client")
+    shutil.copy2(CARGO_TARGET / a.profile / "horizon-client", new / "horizon-client")
     binary = hashlib.sha256((new / "horizon-client").read_bytes()).hexdigest()
     base_meta = {}
     meta = {"base": BASE_TAG, "horizon": REVISION, "base_horizon": REVISION, "hooks": 411, "rust": "1.99.1",
@@ -211,7 +221,7 @@ def main():
     (new / "source-patches.json").write_text(json.dumps({
         "complete": True, "runtime_verified": False, "version": version, "source_revision": REVISION,
         "base_version": BASE_TAG, "patches": hashes, "patched_tree_digest": patched_digest,
-        "mods": mods_ok, "mods_failed": mods_fail, "profile": "fast", "rust": "1.99.1",
+        "mods": mods_ok, "mods_failed": mods_fail, "profile": a.profile, "rustflags": a.rustflags, "rust": "1.99.1",
         "source": str(work), "binary_sha256": binary, "build_seconds": round(time.time() - t0)}, indent=2) + "\n")
     (new / ".installed").touch()
     os.rename(new, dest)
