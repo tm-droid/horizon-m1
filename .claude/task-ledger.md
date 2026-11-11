@@ -14,7 +14,7 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - [x] U4: M1 build profile (thin LTO, cgu=1, target-cpu=apple-m1) | files: outputs/horizon-runtime/build-fast-fdc87ae.py, new patch | done when: build rc 0 + bench + verdict
 - [x] U5: runtime knob sweep | files: config, bench runs | done when: winners table here
 - [ ] U6: MakeUp tierA + MATERIAL_GLOSS + resolutionScale | done when: adopted or rejected w/ numbers + gallery
-- [ ] U7: off-stack + upstream patch candidates -> daily8 stack | done when: daily8-stack.txt + bench per candidate
+- [x] U7: off-stack + upstream patch candidates -> daily8 stack | done when: daily8-stack.txt + bench per candidate
 - [ ] U8: frame bubble (HORIZON_SUBMIT_THREAD, drawables) | done when: verdict w/ numbers
 - [ ] U9: launcher tune (native_cache_gib 8, env persistence) | done when: `horizon-launcher settings` shows values
 - [ ] U10: final daily8 build, gallery, bench vs daily7, 10-min soak, select, report docs/m1-tune-2026-11-11.md | done when: report + selection
@@ -34,3 +34,4 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - U4: m1 profile built (726 s, 77.1 MB vs 89.7); packs +16-18% avg, makeup flight -4%/1%low -21% (likely noise): REJECT by rule, rerun makeup advised; see outputs/horizon-runtime/m1-profile-NOTES.md
 - U7a: candidates prepared: up-frustum-regions, up-mesh-backlog, up-flat-bindgroups, up-cloud-reupload, up-sky-octagon (+ A/B ab-shadow-cull-revert, ab-nearest-samplers; off-stack thread-cap/dimension-warm/gpu-a/gpu-e re-checked) all apply on daily7 alone+combined, uncompiled; see outputs/horizon-native/u7-candidates.md, daily8-cand-stack.txt
 - 2026-11-12 U5 done: runs u5a-u5d (52-106); base F7; sole winner uploadBudgetKiB=4096 (makeup flight 1%low +9.5%, packs risk); see u5-sweep-NOTES.md
+- 2026-11-12 U7b done: d8cand built (rc0, tests = daily7 baseline fails), D8C vs F7 n=4: makeup avg +0.3%, flight 1%low +4.0%, packs avg +17% but D7N rebuild control shows same +17% (rebuild of daily7 stack differs from installed daily7, dragon renders blue; investigate in U10); ADOPT all 9 in daily8-stack.txt (build with --only daily8-mods-only.txt, official minimap leaked in via mods.lock); A/B shadow-cull-revert and nearest-samplers REJECT (no GPU gain); see outputs/horizon-native/u7b-results.md
