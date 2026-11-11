@@ -1,0 +1,122 @@
+{
+  "index": 55,
+  "tag": "u5a",
+  "scenario": "makeup",
+  "build": "M1PROF@base",
+  "version": "native-fdc87ae-m1-m1prof-f5241bf55d1c",
+  "label": "u5a-55-makeup-M1PROF-base",
+  "variant": {
+    "gfx": {},
+    "opt": {},
+    "pack": {},
+    "env": {}
+  },
+  "gate": {
+    "idle_s": 3205,
+    "thermal": "0",
+    "waited_s": 0,
+    "swap_M": 1415.5
+  },
+  "valid": true,
+  "startup_s": 12.3,
+  "settle_s": 6.3,
+  "static": {
+    "avg_fps": 44.24104768271152,
+    "cpu": {
+      "avg_ms": 6.107917262129037,
+      "max_ms": 9.203749656677246,
+      "p50_ms": 5.17349910736084,
+      "p95_ms": 8.392751693725586,
+      "p99_ms": 8.794166564941406
+    },
+    "dynamic_entities_drawn": 0,
+    "dynamic_entities_drawn_avg_per_frame": 0.0,
+    "frames": 664,
+    "gpu": {
+      "avg_ms": 19.904227768082215,
+      "max_ms": 26.990833282470703,
+      "p50_ms": 20.004291534423828,
+      "p95_ms": 23.402584075927734,
+      "p99_ms": 25.7100830078125
+    },
+    "gpu_passes": {
+      "Animated sprites": 0.048624999821186066,
+      "Flatten": 1.814666986465454,
+      "HUD": 4.800665855407715
+    },
+    "low_01pct_fps": 23.74693010796472,
+    "low_1pct_fps": 26.176550951029174,
+    "max_ms": 42.1107063293457,
+    "p50_ms": 22.189376831054688,
+    "p95_ms": 30.98491668701172,
+    "p99_ms": 36.33587265014648,
+    "phases_avg_ms": {
+      "prepare": 1.602447142622557,
+      "render": 3.774698268936341,
+      "tick": 0.6893280756334403,
+      "update": 0.04293429966965488
+    },
+    "seconds": 15.008686158657074,
+    "slow_phases_avg_ms": {
+      "prepare": 1.5569465841565813,
+      "render": 6.121553352900913,
+      "tick": 1.2233691470963617,
+      "update": 0.051910570822656155
+    },
+    "static_bytes_uploaded": 0,
+    "static_entities_drawn": 0,
+    "static_entities_drawn_avg_per_frame": 0.0,
+    "static_snapshot_bytes_built": 0,
+    "static_snapshot_rebuilds": 0
+  },
+  "swap_delta_M": 0.0,
+  "flight": {
+    "avg_fps": 41.11615171808905,
+    "cpu": {
+      "avg_ms": 6.232762715374445,
+      "max_ms": 18.78062629699707,
+      "p50_ms": 6.079625606536865,
+      "p95_ms": 8.488709449768066,
+      "p99_ms": 9.67912483215332
+    },
+    "dynamic_entities_drawn": 0,
+    "dynamic_entities_drawn_avg_per_frame": 0.0,
+    "frames": 658,
+    "gpu": {
+      "avg_ms": 22.566042529051064,
+      "max_ms": 48.95504379272461,
+      "p50_ms": 23.16979217529297,
+      "p95_ms": 26.590791702270508,
+      "p99_ms": 31.53520774841309
+    },
+    "low_01pct_fps": 22.3008732716534,
+    "low_1pct_fps": 24.37670984106335,
+    "max_ms": 44.84129333496094,
+    "p50_ms": 23.91620635986328,
+    "p95_ms": 34.065330505371094,
+    "p99_ms": 38.72966766357422,
+    "phases_avg_ms": {
+      "prepare": 1.3769254691695008,
+      "render": 3.7889888007590113,
+      "tick": 0.9684306087827248,
+      "update": 0.09995692672411768
+    },
+    "seconds": 16.00344323348999,
+    "slow_phases_avg_ms": {
+      "prepare": 2.2788629872458324,
+      "render": 5.5128863879612515,
+      "tick": 3.210958370140621,
+      "update": 0.95800616246249
+    },
+    "static_bytes_uploaded": 0,
+    "static_entities_drawn": 0,
+    "static_entities_drawn_avg_per_frame": 0.0,
+    "static_snapshot_bytes_built": 0,
+    "static_snapshot_rebuilds": 0,
+    "tick_ms": 3.0845794677734375,
+    "tick_ms_max": 5.239493370056152
+  },
+  "swap_delta_end_M": 0.0,
+  "peak_rss_MB": 1639.9,
+  "exit_code": 0
+}

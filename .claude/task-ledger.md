@@ -12,7 +12,7 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - [x] U2: native-mod comparison (upstream catalog vs ours) | files: docs/research/native-mods-compare-2026-11-11.md, mods.lock.tsv | done when: doc with adopt/drop list; minimap hash fixed
 - [x] U3: upstream perf since fdc87ae ranked | files: docs/research/upstream-perf-2026-11-11.md | done when: doc with ranked candidates
 - [x] U4: M1 build profile (thin LTO, cgu=1, target-cpu=apple-m1) | files: outputs/horizon-runtime/build-fast-fdc87ae.py, new patch | done when: build rc 0 + bench + verdict
-- [ ] U5: runtime knob sweep | files: config, bench runs | done when: winners table here
+- [x] U5: runtime knob sweep | files: config, bench runs | done when: winners table here
 - [ ] U6: MakeUp tierA + MATERIAL_GLOSS + resolutionScale | done when: adopted or rejected w/ numbers + gallery
 - [ ] U7: off-stack + upstream patch candidates -> daily8 stack | done when: daily8-stack.txt + bench per candidate
 - [ ] U8: frame bubble (HORIZON_SUBMIT_THREAD, drawables) | done when: verdict w/ numbers
@@ -24,6 +24,8 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - Builds based on fdc87ae stack; daily7 stays installed as rollback.
 - U7 candidates from U3: backport 2a33c013, 562175df, 81a8d04a, 203b3ac8, 89733192; A/B revert 6a8ea6fc (shadow near/far cull, top MakeUp regression suspect) and samplers back to Nearest (8794c49a, 4c0ef1d7). Skip 957ecaff, 5ec521bb, 4a701935.
 - U2 verdict: keep current mod set (no feature loss: daniliammo waypoints, zoom on C, fps_overlay). Not adopting Zoomify/official Minimap/BetterDynamicLights (no perf gain; dynlights no effect under MakeUp). daniliammo upstream 404 -> local clone backed up outside repo. Particle culling upstream vs ours -> bench in U5.
+- U5 base: F7 (daily7) stays base. Makeup pooled n=6 each: F8M static 1%low -2.2%, flight 1%low -7.1%, flight avg -1.9% vs F7 (noise ~+-2 fps; u5a block alone favoured F8M). 
+- U5 winners (makeup, base F7): ONLY gfx.uploadBudgetKiB=4096: flight 1%low +9.5%, p99 -10.1%, avg +1.7%, RSS +3.1% (n=6 pooled); packs flight 1%low -7.9% (2/6 hitches) so conditional. Rejected: workers 3 (RSS +13.8%), 4 (not robust; combo w4+upl flight 1%low -12.5%), 5, HORIZON_WORKER_THREADS=6 (flight avg -10%), chunkUpdates=6 (flight run invalid), HORIZON_MEMORY_LIMIT_MB=4800, particleCulling=async (flight avg -8%). MIMALLOC_PURGE_DELAY: no-op (code sets purge delay 0 at startup). Env persistence: `horizon-launcher instance launch horizon --env "K=v"` (instances.json launch.env); RAM slider -> launch.memory_limit_mb -> HORIZON_MEMORY_LIMIT_MB. Details: outputs/bench-2026-11-10/u5-sweep-NOTES.md
 
 ## Log
 - 2026-11-11 U3 done: docs/research/upstream-perf-2026-11-11.md; nightly still fdc87ae (2026-11-08), main f23176af +4947; BACKPORT 2a33c013, 562175df, 81a8d04a, 203b3ac8, 89733192; suspects 6a8ea6fc (shadow cull), 8794c49a+4c0ef1d7 (trilinear samplers), 3c794c28; 957ecaff (#12448 fix) SKIP, 4a701935 moot
@@ -31,3 +33,4 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - U1: bench.py +F7 (env.K=V already supported); baseline tag u1 x3 makeup/packs valid; medians static avg/1%low: makeup 44.1/27.7, packs 85.6/32.5; env plumbing verified via ps eww (WORKER_THREADS=6).
 - U4: m1 profile built (726 s, 77.1 MB vs 89.7); packs +16-18% avg, makeup flight -4%/1%low -21% (likely noise): REJECT by rule, rerun makeup advised; see outputs/horizon-runtime/m1-profile-NOTES.md
 - U7a: candidates prepared: up-frustum-regions, up-mesh-backlog, up-flat-bindgroups, up-cloud-reupload, up-sky-octagon (+ A/B ab-shadow-cull-revert, ab-nearest-samplers; off-stack thread-cap/dimension-warm/gpu-a/gpu-e re-checked) all apply on daily7 alone+combined, uncompiled; see outputs/horizon-native/u7-candidates.md, daily8-cand-stack.txt
+- 2026-11-12 U5 done: runs u5a-u5d (52-106); base F7; sole winner uploadBudgetKiB=4096 (makeup flight 1%low +9.5%, packs risk); see u5-sweep-NOTES.md
