@@ -1,0 +1,46 @@
+diff --git a/crates/horizon-client-render/src/streaming.rs b/crates/horizon-client-render/src/streaming.rs
+index 7f9a119292..754d522811 100644
+--- a/crates/horizon-client-render/src/streaming.rs
++++ b/crates/horizon-client-render/src/streaming.rs
+@@ -509,6 +509,9 @@ pub struct Streaming {
+     pub mod_forced: HashSet<(i32, i32)>,
+     /// No work is scheduled while paused (title screen).
+     pub paused: bool,
++    /// Finished meshes the renderer has not taken yet (the game's pending
++    /// uploads): they count against the meshing room as the jobs do.
++    pub upload_backlog: usize,
+     /// Dimension flags: sky light, Nether face shading.
+     pub sky_light: bool,
+     pub nether_shading: bool,
+@@ -1096,6 +1099,7 @@ impl Streaming {
+             forced: HashSet::new(),
+             mod_forced: HashSet::new(),
+             paused: false,
++            upload_backlog: 0,
+             sky_light: true,
+             nether_shading: false,
+             shader_pack_lighting: false,
+@@ -2058,7 +2062,10 @@ impl Streaming {
+         // jobs went stale long before a worker reached them (#3629). What
+         // stays dirty is asked for again, from the current centre, as
+         // capacity frees; `requeue` then has a small queue to keep close.
+-        let room = (self.workers * 32).saturating_sub(self.meshing.len());
++        // Meshes waiting for upload count too: when uploads fall behind (a
++        // low frame rate at a wide distance), meshing on held gigabytes of
++        // them until the system swapped.
++        let room = (self.workers * 32).saturating_sub(self.meshing.len() + self.upload_backlog);
+         nearest_first(&mut candidates, room);
+         for (_, x, z, sections) in candidates {
+             let Some(region) = Self::region(world, x, z) else {
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+index b1bd8f0fdb..31b0a3e850 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -16836,6 +16836,7 @@ impl Game<'_> {
+         self.streaming
+             .extra
+             .extend(waiting.into_iter().map(|chunk| (chunk, 0)));
++        self.streaming.upload_backlog = self.pending_uploads.len();
+         let (uploads, unloaded) =
+             horizon_client::spans::time("streaming", || self.streaming.update(&mut self.world));
+         self.streaming.extra.truncate(areas);

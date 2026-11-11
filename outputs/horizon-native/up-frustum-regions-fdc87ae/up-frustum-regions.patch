@@ -1,0 +1,126 @@
+diff --git a/crates/horizon-client-render/src/gfx.rs b/crates/horizon-client-render/src/gfx.rs
+index 0536d6ade4..afd81470ca 100644
+--- a/crates/horizon-client-render/src/gfx.rs
++++ b/crates/horizon-client-render/src/gfx.rs
+@@ -12095,11 +12095,8 @@ impl Frustum {
+     /// Whether the camera-relative box `min..max` is at least partly inside.
+     pub fn intersects(&self, min: Vec3, max: Vec3) -> bool {
+         !self.planes.iter().any(|p| {
+-            let v = Vec3::new(
+-                if p.x >= 0.0 { max.x } else { min.x },
+-                if p.y >= 0.0 { max.y } else { min.y },
+-                if p.z >= 0.0 { max.z } else { min.z },
+-            );
++            let sign = p.truncate().cmpge(Vec3::ZERO);
++            let v = Vec3::select(sign, max, min);
+             p.truncate().dot(v) + p.w < 0.0
+         })
+     }
+@@ -12122,11 +12119,8 @@ impl Frustum {
+             return true;
+         }
+         !self.planes[4..].iter().any(|p| {
+-            let v = Vec3::new(
+-                if p.x >= 0.0 { max.x } else { min.x },
+-                if p.y >= 0.0 { max.y } else { min.y },
+-                if p.z >= 0.0 { max.z } else { min.z },
+-            );
++            let sign = p.truncate().cmpge(Vec3::ZERO);
++            let v = Vec3::select(sign, max, min);
+             p.truncate().dot(v) + p.w < 0.0
+         })
+     }
+@@ -12136,11 +12130,8 @@ impl Frustum {
+     /// rounding keeps that order.
+     pub fn contains(&self, min: Vec3, max: Vec3) -> bool {
+         self.planes.iter().all(|p| {
+-            let v = Vec3::new(
+-                if p.x >= 0.0 { min.x } else { max.x },
+-                if p.y >= 0.0 { min.y } else { max.y },
+-                if p.z >= 0.0 { min.z } else { max.z },
+-            );
++            let sign = p.truncate().cmpge(Vec3::ZERO);
++            let v = Vec3::select(sign, min, max);
+             p.truncate().dot(v) + p.w >= 0.0
+         })
+     }
+diff --git a/crates/horizon-client-render/src/gfx/resident.rs b/crates/horizon-client-render/src/gfx/resident.rs
+index bf1c0c9909..6156aa5459 100644
+--- a/crates/horizon-client-render/src/gfx/resident.rs
++++ b/crates/horizon-client-render/src/gfx/resident.rs
+@@ -439,17 +439,18 @@ impl<T> Resident<T> {
+             if list.is_empty() {
+                 continue;
+             }
+-            let min = origin((column.x, column.low, column.z), self.min_y, camera).as_vec3();
+-            let top = origin((column.x, column.high, column.z), self.min_y, camera).as_vec3();
+-            let max = top + Vec3::splat(16.0);
+-            let inside = frustum.contains(min, max);
+-            if !inside && !frustum.intersects(min, max) {
+-                continue;
+-            }
+             let ox = f64::from(column.x * 16) - camera.x;
+             let oz = f64::from(column.z * 16) - camera.z;
+             let min_x = ox as f32;
+             let min_z = oz as f32;
++            let low_oy = (f64::from(self.min_y + column.low * 16) - camera.y) as f32;
++            let high_oy = (f64::from(self.min_y + column.high * 16) - camera.y) as f32;
++            let min = Vec3::new(min_x, low_oy, min_z);
++            let max = Vec3::new(min_x + 16.0, high_oy + 16.0, min_z + 16.0);
++            let inside = frustum.contains(min, max);
++            if !inside && !frustum.intersects(min, max) {
++                continue;
++            }
+             let dx8 = ox + 8.0;
+             let dz8 = oz + 8.0;
+             let xz_sq = dx8 * dx8 + dz8 * dz8;
+diff --git a/crates/horizon-client-render/src/streaming.rs b/crates/horizon-client-render/src/streaming.rs
+index 7f9a119292..67b6da1de3 100644
+--- a/crates/horizon-client-render/src/streaming.rs
++++ b/crates/horizon-client-render/src/streaming.rs
+@@ -279,7 +279,7 @@ enum Job {
+     Decorate(i32, i32, Box<[Proto; 9]>, Vec<(usize, Chunk)>),
+     Finish(Proto),
+     Light(i32, i32, Box<Region>, u64, bool),
+-    Mesh(i32, i32, i32, Box<Region>, u64, MeshSettings),
++    Mesh(i32, i32, i32, Arc<Region>, u64, MeshSettings),
+     /// Proto chunks checked out to be saved (`ChunkGenerator::save_protos`),
+     /// off the main thread like vanilla's IOWorker.
+     Save(Vec<((i32, i32), Proto)>),
+@@ -1481,7 +1481,7 @@ impl Streaming {
+             z,
+         )
+     }
+-    fn region(world: &World, x: i32, z: i32) -> Option<Box<Region>> {
++    fn region(world: &World, x: i32, z: i32) -> Option<Arc<Region>> {
+         let mut region: Region = Default::default();
+         for dz in 0..3 {
+             for dx in 0..3 {
+@@ -1493,7 +1493,7 @@ impl Streaming {
+                 );
+             }
+         }
+-        Some(Box::new(region))
++        Some(Arc::new(region))
+     }
+     pub fn is_lit(&self, x: i32, z: i32) -> bool {
+         self.lit.contains(&(x, z))
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+index b1bd8f0fdb..d1de533263 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -16944,7 +16944,13 @@ impl Game<'_> {
+                     }
+                 }
+                 let centre = self.streaming.center;
+-                let far = |k: &(i32, i32, i32)| (k.0 - centre.0).pow(2) + (k.2 - centre.1).pow(2);
++                let cam_y = self
++                    .player
++                    .as_ref()
++                    .map_or(4, |p| (p.position.y / 16.0).floor() as i32);
++                let far = |k: &(i32, i32, i32)| {
++                    (k.0 - centre.0).pow(2) + (k.1 - cam_y).pow(2) + (k.2 - centre.1).pow(2)
++                };
+                 pending.sort_unstable_by_key(|(k, _)| std::cmp::Reverse(far(k)));
+                 let upload_scale = adaptive_upload::scale(centre, pending.len());
+                 let (limit, budget) = if budgeted {

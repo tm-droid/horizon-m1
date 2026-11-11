@@ -1,0 +1,21 @@
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index d81a043cbd..3d7e315e87 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -3492,14 +3492,14 @@ impl PackPost {
+                 label: Some("Shader pack atlas"),
+                 address_mode_u: wgpu::AddressMode::Repeat,
+                 address_mode_v: wgpu::AddressMode::Repeat,
+-                mipmap_filter: wgpu::MipmapFilterMode::Linear,
++                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                 ..Default::default()
+             }),
+             buffer_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                 label: Some("Shader pack buffers"),
+                 mag_filter: wgpu::FilterMode::Linear,
+                 min_filter: wgpu::FilterMode::Linear,
+-                mipmap_filter: wgpu::MipmapFilterMode::Linear,
++                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                 ..Default::default()
+             }),
+             blit,

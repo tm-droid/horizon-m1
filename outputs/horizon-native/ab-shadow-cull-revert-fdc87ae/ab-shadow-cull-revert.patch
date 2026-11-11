@@ -1,0 +1,14 @@
+diff --git a/crates/horizon-client-render/src/gfx/pack_post.rs b/crates/horizon-client-render/src/gfx/pack_post.rs
+index d81a043cbd..05a8473a84 100644
+--- a/crates/horizon-client-render/src/gfx/pack_post.rs
++++ b/crates/horizon-client-render/src/gfx/pack_post.rs
+@@ -4739,7 +4739,8 @@ impl PackPost {
+             },
+             every_face: true,
+             view_casters: true,
+-            depth_planes: false,
++            // A/B (6a8ea6fc revert): cull the shadow pass by the pack's near/far planes again.
++            depth_planes: true,
+         })
+     }
+ 
