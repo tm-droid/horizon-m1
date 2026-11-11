@@ -125,14 +125,21 @@ def main():
     lab = LAB / stamp
     lab.mkdir(parents=True)
     work = lab / "source"
-    run(["rsync", "-a", "--exclude=.git", "--exclude=/CLAUDE.md", str(SOURCE) + "/", str(work) + "/"])
+    run(["rsync", "-a", "--exclude=.git", "--exclude=.DS_Store", "--exclude=/CLAUDE.md", str(SOURCE) + "/", str(work) + "/"])
     names = [l.split("#", 1)[0].strip() for l in STACK.read_text().splitlines()]
     names = [n for n in names if n]
     hashes = {}
     for n in names:
         p = NATIVE / f"{n}-fdc87ae" / f"{n}.patch"
-        run(["git", "apply", "--check", str(p)], cwd=work)
-        run(["git", "apply", "--whitespace=nowarn", str(p)], cwd=work)
+        # work lives inside the Horizon repo: without a ceiling git finds that repo, treats the
+        # patch paths as repo-root relative and silently "Skips" every hunk (U7c). Hide the repo,
+        # and refuse any skipped hunk.
+        genv = dict(os.environ, GIT_CEILING_DIRECTORIES=str(ROOT))
+        for extra in (["--check"], ["--whitespace=nowarn"]):
+            r = subprocess.run(["git", "apply", *extra, str(p)], cwd=work, env=genv, text=True,
+                               capture_output=True)
+            if r.returncode or "Skipped" in r.stderr:
+                sys.exit(f"patch {n} did not apply cleanly: {r.stderr[-400:]}")
         hashes[n] = hashlib.sha256(p.read_bytes()).hexdigest()
         print(f"patch {n}: ok", flush=True)
     patched_digest = tree_digest(work)

@@ -19,8 +19,8 @@ OUT = HZ / "outputs/bench-2026-11-10"
 SCRATCH = Path("/private/tmp/claude-503/-Users-tanushmalhotra--claude-spares-spare-eGaSaI/8d128168-f675-40ad-b495-8887043fa141/scratchpad")
 PROFILES = SCRATCH / "prof"
 TEMPLATE = SCRATCH / "template/Horizon-Test"
-BUILDS = {"D": "native-fdc87ae-m1-daily1-341aea300aca", "S": "nightly-2026-11-08-fdc87ae", "R": "native-f42-m1-r11-ef12b7f4368d", "N": "native-fdc87ae-m1-daily2-e2ee606a0b00", "T3": "native-fdc87ae-m1-daily3-4b6a81c9bdf9", "F4": "native-fdc87ae-m1-daily4-48183177b078", "F5": "native-fdc87ae-m1-daily5-6d28a2f92dc9", "F6": "native-fdc87ae-m1-daily6-7603f3a77f14", "F7": "native-fdc87ae-m1-daily7-73decc0fdc30", "F8M": "native-fdc87ae-m1-m1prof-f5241bf55d1c", "D8C": "native-fdc87ae-m1-d8cand-f5241bf55d1c", "D8S": "native-fdc87ae-m1-d8shadow-8d0da9cafac9", "D8N": "native-fdc87ae-m1-d8near-8d0da9cafac9", "D8U": "native-fdc87ae-m1-d8up-f5241bf55d1c", "D8O": "native-fdc87ae-m1-d8off-f5241bf55d1c", "D8X": "native-fdc87ae-m1-d8nogpua-f5241bf55d1c", "F7R": "native-fdc87ae-m1-d7r-f5241bf55d1c", "D7N": "native-fdc87ae-m1-d7n-8d0da9cafac9", "D8C2": "native-fdc87ae-m1-d8c-8d0da9cafac9"}
-NAMES = {"D": "DAILY", "S": "STOCK", "R": "R11", "N": "DAILY2", "T3": "DAILY3", "F4": "DAILY4", "F5": "DAILY5", "F6": "DAILY6", "F7": "DAILY7", "F8M": "M1PROF", "D8C": "D8CAND", "D8S": "D8SHADOW", "D8N": "D8NEAR", "D8U": "D8UP", "D8O": "D8OFF", "D8X": "D8NOGPUA", "F7R": "D7REBUILD", "D7N": "D7NOMM", "D8C2": "D8C"}
+BUILDS = {"D": "native-fdc87ae-m1-daily1-341aea300aca", "S": "nightly-2026-11-08-fdc87ae", "R": "native-f42-m1-r11-ef12b7f4368d", "N": "native-fdc87ae-m1-daily2-e2ee606a0b00", "T3": "native-fdc87ae-m1-daily3-4b6a81c9bdf9", "F4": "native-fdc87ae-m1-daily4-48183177b078", "F5": "native-fdc87ae-m1-daily5-6d28a2f92dc9", "F6": "native-fdc87ae-m1-daily6-7603f3a77f14", "F7": "native-fdc87ae-m1-daily7-73decc0fdc30", "F8M": "native-fdc87ae-m1-m1prof-f5241bf55d1c", "D8C": "native-fdc87ae-m1-d8cand-f5241bf55d1c", "D8S": "native-fdc87ae-m1-d8shadow-8d0da9cafac9", "D8N": "native-fdc87ae-m1-d8near-8d0da9cafac9", "D8U": "native-fdc87ae-m1-d8up-f5241bf55d1c", "D8O": "native-fdc87ae-m1-d8off-f5241bf55d1c", "D8X": "native-fdc87ae-m1-d8nogpua-f5241bf55d1c", "F7R": "native-fdc87ae-m1-d7r-f5241bf55d1c", "D7N": "native-fdc87ae-m1-d7n-8d0da9cafac9", "D8C2": "native-fdc87ae-m1-d8c-8d0da9cafac9", "D7F": "native-fdc87ae-m1-u7cfix-73decc0fdc30"}
+NAMES = {"D": "DAILY", "S": "STOCK", "R": "R11", "N": "DAILY2", "T3": "DAILY3", "F4": "DAILY4", "F5": "DAILY5", "F6": "DAILY6", "F7": "DAILY7", "F8M": "M1PROF", "D8C": "D8CAND", "D8S": "D8SHADOW", "D8N": "D8NEAR", "D8U": "D8UP", "D8O": "D8OFF", "D8X": "D8NOGPUA", "F7R": "D7REBUILD", "D7N": "D7NOMM", "D8C2": "D8C", "D7F": "D7FIXED"}
 FLY = ["-527.5", "95", "57.5", "-399.5", "95", "57.5"]
 COOLDOWN = 45
 
@@ -62,7 +62,7 @@ def gate(max_wait=900):
         th = sh(["notifyutil", "-g", "com.apple.system.thermalpressurelevel"]).stdout.strip().split()[-1]
         if th != "0":
             probs.append(f"thermal {th}")
-        if "CGSSessionScreenIsLocked" in sh(["ioreg", "-n", "Root", "-d1"]).stdout and \
+        if not os.environ.get("BENCH_ALLOW_LOCKED") and "CGSSessionScreenIsLocked" in sh(["ioreg", "-n", "Root", "-d1"]).stdout and \
                 re.search(r"CGSSessionScreenIsLocked\D*(Yes|1)", sh(["ioreg", "-n", "Root", "-d1"]).stdout):
             probs.append("screen locked")
         if not probs:
