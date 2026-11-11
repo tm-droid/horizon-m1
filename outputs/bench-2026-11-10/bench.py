@@ -19,8 +19,8 @@ OUT = HZ / "outputs/bench-2026-11-10"
 SCRATCH = Path("/private/tmp/claude-503/-Users-tanushmalhotra--claude-spares-spare-eGaSaI/8d128168-f675-40ad-b495-8887043fa141/scratchpad")
 PROFILES = SCRATCH / "prof"
 TEMPLATE = SCRATCH / "template/Horizon-Test"
-BUILDS = {"D": "native-fdc87ae-m1-daily1-341aea300aca", "S": "nightly-2026-11-08-fdc87ae", "R": "native-f42-m1-r11-ef12b7f4368d", "N": "native-fdc87ae-m1-daily2-e2ee606a0b00", "T3": "native-fdc87ae-m1-daily3-4b6a81c9bdf9", "F4": "native-fdc87ae-m1-daily4-48183177b078", "F5": "native-fdc87ae-m1-daily5-6d28a2f92dc9", "F6": "native-fdc87ae-m1-daily6-7603f3a77f14"}
-NAMES = {"D": "DAILY", "S": "STOCK", "R": "R11", "N": "DAILY2", "T3": "DAILY3", "F4": "DAILY4", "F5": "DAILY5", "F6": "DAILY6"}
+BUILDS = {"D": "native-fdc87ae-m1-daily1-341aea300aca", "S": "nightly-2026-11-08-fdc87ae", "R": "native-f42-m1-r11-ef12b7f4368d", "N": "native-fdc87ae-m1-daily2-e2ee606a0b00", "T3": "native-fdc87ae-m1-daily3-4b6a81c9bdf9", "F4": "native-fdc87ae-m1-daily4-48183177b078", "F5": "native-fdc87ae-m1-daily5-6d28a2f92dc9", "F6": "native-fdc87ae-m1-daily6-7603f3a77f14", "F7": "native-fdc87ae-m1-daily7-73decc0fdc30"}
+NAMES = {"D": "DAILY", "S": "STOCK", "R": "R11", "N": "DAILY2", "T3": "DAILY3", "F4": "DAILY4", "F5": "DAILY5", "F6": "DAILY6", "F7": "DAILY7"}
 FLY = ["-527.5", "95", "57.5", "-399.5", "95", "57.5"]
 COOLDOWN = 45
 
