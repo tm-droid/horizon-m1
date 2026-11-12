@@ -15,10 +15,10 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - [x] U5: runtime knob sweep | files: config, bench runs | done when: winners table here
 - [ ] U6: MakeUp tierA + MATERIAL_GLOSS + resolutionScale | done when: adopted or rejected w/ numbers + gallery
 - [x] U7: off-stack + upstream patch candidates -> daily8 stack | done when: daily8-stack.txt + bench per candidate
-- [ ] U8: frame bubble (HORIZON_SUBMIT_THREAD, drawables) | done when: verdict w/ numbers
+- [x] U8: frame bubble (HORIZON_SUBMIT_THREAD, drawables) | done when: verdict w/ numbers -- REJECTED from source: submit.rs:14-24 documents Metal stall (0.1-0.5x FPS, 20-180 ms p99); drawable latency hardcoded 2 (gfx.rs:2652), no env
 - [ ] U9: launcher tune (native_cache_gib 8, env persistence) | done when: `horizon-launcher settings` shows values
 - [ ] U10: final daily8 build, gallery, bench vs daily7, 10-min soak, select, report docs/m1-tune-2026-11-11.md | done when: report + selection
-- [ ] U11: Amphetamine off (end session, quit, CDMManager.app, SleepDisabled 0) | done when: pmset checks pass
+- [x] U11: Amphetamine off (done earlier; user: no further action) (end session, quit, CDMManager.app, SleepDisabled 0) | done when: pmset checks pass
 
 ## Decisions
 - Builds based on fdc87ae stack; daily7 stays installed as rollback.
@@ -38,3 +38,8 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - U7a: candidates prepared: up-frustum-regions, up-mesh-backlog, up-flat-bindgroups, up-cloud-reupload, up-sky-octagon (+ A/B ab-shadow-cull-revert, ab-nearest-samplers; off-stack thread-cap/dimension-warm/gpu-a/gpu-e re-checked) all apply on daily7 alone+combined, uncompiled; see outputs/horizon-native/u7-candidates.md, daily8-cand-stack.txt
 - 2026-11-12 U5 done: runs u5a-u5d (52-106); base F7; sole winner uploadBudgetKiB=4096 (makeup flight 1%low +9.5%, packs risk); see u5-sweep-NOTES.md
 - 2026-11-12 U7b done: d8cand built (rc0, tests = daily7 baseline fails), D8C vs F7 n=4: makeup avg +0.3%, flight 1%low +4.0%, packs avg +17% but D7N rebuild control shows same +17% (rebuild of daily7 stack differs from installed daily7, dragon renders blue; investigate in U10); ADOPT all 9 in daily8-stack.txt (build with --only daily8-mods-only.txt, official minimap leaked in via mods.lock); A/B shadow-cull-revert and nearest-samplers REJECT (no GPU gain); see outputs/horizon-native/u7b-results.md
+- 2026-11-12: user played 19 min on a multiplayer server: median 41.6 fps / 26 1%low; swap 1.5->2.9 GB at 12.5 min -> stutters (p99 136 ms). Game commit 1.77 GB, RSS 100-400 MB (compressed). Section meshes ~680 MB.
+- 2026-11-12: freed ~17 GB (native/target.noindex/fast 16G cache, bisect versions nop/nou/nov/stk/u7cfix).
+- 2026-11-12: tools/play-offline.sh + ~/Applications/Horizon Offline.app (launcher Play needs MS account).
+- 2026-11-12: source scan: HORIZON_MEMORY_LIMIT_MB absent at fdc87ae (U5 test was a no-op); textureBudgetMiB 0=256 MiB default; upscaling = TAA (quality 1.5 .. ultraPerformance 3.0), no MetalFX; shadowCache off by default; mimalloc purge_delay forced 0.
+- U12 (new): real-profile bench outputs/bench-2026-11-10/real.py (player's options/packs/shader, fullscreen 2880x1800, phys_footprint).
