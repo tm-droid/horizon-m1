@@ -16,8 +16,8 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - [x] U6: MakeUp tierA + MATERIAL_GLOSS + resolutionScale | done when: adopted or rejected w/ numbers + gallery -- tierA/GLOSS already live 11-11; res 85 kept, res 70 in horizon-perf.sh max
 - [x] U7: off-stack + upstream patch candidates -> daily8 stack | done when: daily8-stack.txt + bench per candidate
 - [x] U8: frame bubble (HORIZON_SUBMIT_THREAD, drawables) | done when: verdict w/ numbers -- REJECTED from source: submit.rs:14-24 documents Metal stall (0.1-0.5x FPS, 20-180 ms p99); drawable latency hardcoded 2 (gfx.rs:2652), no env
-- [ ] U9: launcher tune (native_cache_gib 8, env persistence) | done when: `horizon-launcher settings` shows values
-- [ ] U10: final daily8 build, gallery, bench vs daily7, 10-min soak, select, report docs/m1-tune-2026-11-11.md | done when: report + selection
+- [x] U9: launcher tune (native_cache_gib 8, env persistence) | done when: `horizon-launcher settings` shows values -- native_cache_gib 8 live; no env winner to persist (upload budget rejected); launcher footprint 26 MB while idle
+- [x] U10: final daily8 build, gallery, bench vs daily7, 10-min soak, select, report docs/m1-tune-2026-11-11.md | done when: report + selection -- daily8 NOT selected: makeup avg +0.3% (U7b, flight numbers tainted by idle cap), rebuilt stack renders dragon blue (open); daily7 stays. Report docs/m1-tune-2026-11-12.md
 - [x] U11: Amphetamine off (done earlier; user: no further action) (end session, quit, CDMManager.app, SleepDisabled 0) | done when: pmset checks pass
 
 ## Decisions
