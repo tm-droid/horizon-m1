@@ -11,6 +11,8 @@ from pathlib import Path
 import bench as B
 
 GAME = B.HOME / "Library/Application Support/horizon"
+DROP = {}
+SUB = {}
 
 
 def footprint_mb(pid):
@@ -37,6 +39,10 @@ def real_stage(profile, build, scenario, world_from, variant=None):
     if ARGS.windowed:
         opts["fullscreen"] = "false"
     (profile / "options.txt").write_text("".join(f"{k}:{v}\n" for k, v in opts.items()))
+    # dynamic-fps-for-rust (in the daily7 mods) caps a focused window to 20 fps after 60 s with no
+    # input; benches send no input, so the scripted flight hit that cap. Turn the mod off here.
+    (profile / "config").mkdir(exist_ok=True)
+    (profile / "config/dynamic-fps-for-rust.json").write_text('{"enabled": false}\n')
     gfx = (GAME / "horizon-graphics.txt").read_text()
     (profile / "horizon-graphics.txt").write_text(gfx)
     shader = re.search(r"^pickedShaderPack:(.*)$", gfx, re.M).group(1).strip()
@@ -48,6 +54,22 @@ def real_stage(profile, build, scenario, world_from, variant=None):
         for f in (shader, shader + ".txt"):
             if (GAME / "shaderpacks" / f).exists():
                 subprocess.run(["/bin/cp", "-c", str(GAME / "shaderpacks" / f), str(profile / "shaderpacks")], check=True)
+    if variant in SUB:  # replace a pack (name contains old) with a local pack file
+        old, new = SUB[variant]
+        new = Path(new)
+        sel2 = []
+        for p in sel:
+            if old.lower() in p.lower():
+                subprocess.run(["rm", "-rf", str(profile / "resourcepacks" / p.removeprefix("file/"))])
+                subprocess.run(["/bin/cp", "-cR", str(new), str(profile / "resourcepacks")], check=True)
+                p = "file/" + new.name
+            sel2.append(p)
+        B.override(profile / "options.txt", {"resourcePacks": json.dumps(sel2)})
+        sel = sel2
+    if variant in DROP:  # drop every pack whose name contains one of the substrings
+        keep = [p for p in sel if not any(d.lower() in p.lower() for d in DROP[variant])]
+        print(f"  {variant}: dropped {len(sel) - len(keep)} packs", flush=True)
+        B.override(profile / "options.txt", {"resourcePacks": json.dumps(keep)})
     v = B.VARIANTS.get(variant) if variant else None
     if v:
         if v["gfx"]: B.override(profile / "horizon-graphics.txt", v["gfx"])
@@ -182,10 +204,18 @@ if __name__ == "__main__":
     ap.add_argument("--start", type=int, default=1)
     ap.add_argument("--variant", action="append", default=[])
     ap.add_argument("--windowed", action="store_true")
+    ap.add_argument("--drop", action="append", default=[], help="NAME:sub1|sub2 drops packs containing a substring")
+    ap.add_argument("--sub", action="append", default=[], help="NAME:oldsubstr=>/path/new.zip")
     ap.add_argument("--uncapped", action="store_true", help="maxFps 260 instead of the player's cap")
     ARGS = ap.parse_args()
     for s in ARGS.variant:
         B.parse_variant(s)
+    for s in ARGS.sub:
+        n, _, rest = s.partition(":")
+        SUB[n] = tuple(rest.split("=>"))
+    for s in ARGS.drop:
+        n, _, subs = s.partition(":")
+        DROP[n] = subs.split("|")
     B.PROFILES.mkdir(parents=True, exist_ok=True)
     was = B.get_mute(); B.mute(True)
     idx = ARGS.start

@@ -13,7 +13,7 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - [x] U3: upstream perf since fdc87ae ranked | files: docs/research/upstream-perf-2026-11-11.md | done when: doc with ranked candidates
 - [x] U4: M1 build profile (thin LTO, cgu=1, target-cpu=apple-m1) | files: outputs/horizon-runtime/build-fast-fdc87ae.py, new patch | done when: build rc 0 + bench + verdict
 - [x] U5: runtime knob sweep | files: config, bench runs | done when: winners table here
-- [ ] U6: MakeUp tierA + MATERIAL_GLOSS + resolutionScale | done when: adopted or rejected w/ numbers + gallery
+- [x] U6: MakeUp tierA + MATERIAL_GLOSS + resolutionScale | done when: adopted or rejected w/ numbers + gallery -- tierA/GLOSS already live 11-11; res 85 kept, res 70 in horizon-perf.sh max
 - [x] U7: off-stack + upstream patch candidates -> daily8 stack | done when: daily8-stack.txt + bench per candidate
 - [x] U8: frame bubble (HORIZON_SUBMIT_THREAD, drawables) | done when: verdict w/ numbers -- REJECTED from source: submit.rs:14-24 documents Metal stall (0.1-0.5x FPS, 20-180 ms p99); drawable latency hardcoded 2 (gfx.rs:2652), no env
 - [ ] U9: launcher tune (native_cache_gib 8, env persistence) | done when: `horizon-launcher settings` shows values
@@ -28,6 +28,8 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - U5 winners (makeup, base F7): ONLY gfx.uploadBudgetKiB=4096: flight 1%low +9.5%, p99 -10.1%, avg +1.7%, RSS +3.1% (n=6 pooled); packs flight 1%low -7.9% (2/6 hitches) so conditional. Rejected: workers 3 (RSS +13.8%), 4 (not robust; combo w4+upl flight 1%low -12.5%), 5, HORIZON_WORKER_THREADS=6 (flight avg -10%), chunkUpdates=6 (flight run invalid), HORIZON_MEMORY_LIMIT_MB=4800, particleCulling=async (flight avg -8%). MIMALLOC_PURGE_DELAY: no-op (code sets purge delay 0 at startup). Env persistence: `horizon-launcher instance launch horizon --env "K=v"` (instances.json launch.env); RAM slider -> launch.memory_limit_mb -> HORIZON_MEMORY_LIMIT_MB. Details: outputs/bench-2026-11-10/u5-sweep-NOTES.md
 
 - U4 m1prof + U7b invalid (unpatched; build script silently skipped patches, see outputs/horizon-native/u7c-rebuild-diff.md); redo.
+- U5 upload budget REVERSED: real-profile n=3 vs 3 static 46.4/31.3 vs base 46.5/32.9 -> rejected. U5 flight wins unreliable: daily7's dynamic-fps-for-rust caps a focused window at 20 fps after 60 s without input (hands-free flights); bench.py/real.py now seed config/dynamic-fps-for-rust.json {"enabled": false}.
+- Packs: no silent removal of player-chosen packs; Bushy Leaves (+27% fps, -320 MB) offered via tools/horizon-perf.sh fast. Slim Dramatic Skys adopted (visual-equal, -200 MB).
 
 ## Log
 - 2026-11-12 U7e BLOCKED: screen locked 05:02-07:53+ (no frames presented, benches invalid). Built STK/NOP/NOV/NOU variants (rc0) ready in versions/; resume cmds in outputs/horizon-native/u7e-bisect.md. U7c commit 0bfea4b; dragon check pending.
@@ -43,3 +45,4 @@ Plan: ~/.claude/plans/make-my-horizon-super-cozy-crescent.md
 - 2026-11-12: tools/play-offline.sh + ~/Applications/Horizon Offline.app (launcher Play needs MS account).
 - 2026-11-12: source scan: HORIZON_MEMORY_LIMIT_MB absent at fdc87ae (U5 test was a no-op); textureBudgetMiB 0=256 MiB default; upscaling = TAA (quality 1.5 .. ultraPerformance 3.0), no MetalFX; shadowCache off by default; mimalloc purge_delay forced 0.
 - U12 (new): real-profile bench outputs/bench-2026-11-10/real.py (player's options/packs/shader, fullscreen 2880x1800, phys_footprint).
+- 2026-11-12 U12 done: slim Dramatic Skys M1.zip live (orig zip kept); verified s7: pretty 46.5 fps, footprint 3.30 GB (was 3.41), flight 43.5 p99 33 (idle cap fixed); fast 58.7 fps 3.07 GB. tools/horizon-perf.sh pretty|fast|max|status (round trip byte-identical). Report docs/m1-tune-2026-11-12.md.

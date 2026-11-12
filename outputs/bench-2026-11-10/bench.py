@@ -123,6 +123,9 @@ def stage(profile, build, scenario, world_from, variant=None):
     opts.update(maxFps="260", enableVsync="false", simulationDistance="8", pauseOnLostFocus="false",
                 inactivityFpsLimit="minimized", tutorialStep="none", resourcePacks=json.dumps(selection))
     (profile / "options.txt").write_text("".join(f"{k}:{v}\n" for k, v in opts.items()))
+    # daily7 ships dynamic-fps-for-rust: 20 fps after 60 s without input would cap hands-free flights.
+    (profile / "config").mkdir(exist_ok=True)
+    (profile / "config/dynamic-fps-for-rust.json").write_text('{"enabled": false}\n')
     shader = ""
     if scenario == "makeup":
         shader = SHADER.name
@@ -195,7 +198,8 @@ class Game:
             s = self.ctl("status")
             act = [s["streaming"][k] for k in ["queued", "generating", "decorating", "lighting", "finishing", "meshing"]]
             fp = (s["chunks"], s["renderer"]["resident_sections"])
-            quiet = s["chunks"] >= 637 and s["pending_chunks"] == 0 and s["pending_uploads"] == 0 and s["dirty_light"] == 0 and not any(act)
+            need = int(637 * (s.get("render_distance", 12) / 12) ** 2 * 0.9)  # 637 = settled RD12 count
+            quiet = s["chunks"] >= need and s["pending_chunks"] == 0 and s["pending_uploads"] == 0 and s["dirty_light"] == 0 and not any(act)
             stable = stable + 1 if quiet and fp == prev else (1 if quiet else 0)
             if stable >= 5:
                 return round(time.time() - t0, 1)
