@@ -10,7 +10,7 @@
   "ping_notice_seen": true,
   "owner_notice_seen": true,
   "partner_seen_secs": 180,
-  "partner_hidden": false,
+  "partner_hidden": true,
   "while_playing": "hide",
   "accent": "amber",
   "native_profile": "release",
