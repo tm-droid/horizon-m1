@@ -1,6 +1,6 @@
 # Horizon M1: a tuned Minecraft client for Apple Silicon Macs
 
-[Horizon](https://github.com/horizon-rust/horizon) ([site](https://playhorizon.dev)) is an unofficial rewrite of Minecraft: Java Edition 26.3 in Rust. It runs natively on Apple Silicon, with no Java needed to play. **Horizon M1** is a build of it tuned for a MacBook Air M1 with 8 GB of RAM, plus a one-click installer, a set of handy mods (minimap, zoom, FPS counter and more) and an optional full look: 63 resource packs and the MakeUp shader.
+[Horizon](https://github.com/horizon-rust/horizon) ([site](https://playhorizon.dev)) is an unofficial rewrite of Minecraft: Java Edition 26.3 in Rust. It runs natively on Apple Silicon, with no Java needed to play. **Horizon M1** is a build of it tuned for a MacBook Air M1 with 8 GB of RAM, plus a one-click installer, a set of handy mods (minimap, zoom, FPS counter and more) and the full look of the original setup: 63 resource packs and the MakeUp shader.
 
 > Horizon M1 is not affiliated with, endorsed by, or connected to Mojang or Microsoft. It contains no Minecraft game files. You need your own copy of Minecraft: Java Edition.
 
@@ -15,7 +15,7 @@
 > If macOS 15 or newer says it can't be opened: click **Done**, open **System Settings > Privacy & Security**, scroll down, click **Open Anyway**, then open the installer again.
 >
 > A Terminal window opens and asks two questions:
-> - Which look do you want? Type `1`, `2` or `3` (not sure? pick `2`, the fast look: it keeps almost everything and runs smoother).
+> - Which look do you want? Type `1`, `2` or `3` (just press Return for the full look; pick `2` if you want more FPS).
 > - How do you want to play? Type `1` for a Microsoft account or `2` for offline.
 >
 > Then follow the on-screen steps. Details for each choice are below.
@@ -27,6 +27,7 @@
 - [Playing](#playing)
 - [Included mods](#included-mods)
 - [The look: resource packs and shader](#the-look-resource-packs-and-shader)
+- [Add your own mods and packs](#add-your-own-mods-and-packs)
 - [Tips for smooth FPS on 8 GB](#tips-for-smooth-fps-on-8-gb)
 - [Updating](#updating)
 - [Where things live](#where-things-live)
@@ -125,7 +126,7 @@ Full credits and licenses: `LICENSES/CREDITS.md` inside the zip, or [dist/LICENS
 
 ## The look: resource packs and shader
 
-The installer offers the full look from the author's own game:
+The installer puts in the full look from the author's own game. Press Return for it, or pick a lighter one:
 
 | Choice | What you get | FPS on an M1 Air (85% resolution) |
 |---|---|---|
@@ -146,6 +147,54 @@ You can change any of this in the game: **Options > Resource Packs** and **Optio
 ### Why only 16 mods?
 
 The original Java setup had 259 mod JARs. Horizon is written in Rust, so Java mods can't run in it. Mods have to be rewritten for Horizon, and the 16 in the table above are the ones that exist so far. Most of the old look came from resource packs and a shader, and those work in Horizon. The converter in `tools/horizon-convert.py` turned the rest into the compatibility packs. It needs a Java Minecraft instance to read from, so it is a developer tool: you get its output in the zip and don't need to run it.
+
+### Add your own mods and packs
+
+Everything below uses Terminal (in Applications > Utilities). First paste this line and press Return, so the
+commands after it are short:
+
+```sh
+HL=/Applications/Horizon.app/Contents/MacOS/horizon-launcher
+```
+
+**Resource packs and shaders: easy and safe.**
+Normal Minecraft Java resource packs work. Either drag the pack's `.zip` into
+`~/Library/Application Support/horizon/resourcepacks` (in Finder: **Go > Go to Folder**, paste the path), or
+search and install it from Modrinth:
+
+```sh
+$HL mods search "fresh animations"
+$HL mods install <name-in-brackets-from-the-search>
+```
+
+Then turn it on in the game: **Options > Resource Packs**. Shader packs go in the `shaderpacks` folder and are
+picked in **Options > Video Settings > Shader Packs**.
+
+**Java mods: some of them, partly.**
+Horizon can't run Java code, but the launcher can carry over a Java mod's *content*: its blocks, items,
+recipes, loot, world generation and textures. Machines, new mobs, menus and anything that changes how the game
+works don't come along. Ask the launcher first, then install, then restart the game:
+
+```sh
+$HL mods search --kind mod "biomes"
+$HL mods check biomes-o-plenty
+$HL mods install biomes-o-plenty
+```
+
+Tested with this build: **Biomes O' Plenty** says "Partly" (439 blocks, 33 items, its biomes) and loads fine
+in the M1 build. **Sodium** says "Doesn't run" (it is all code). Performance mods like Sodium, Lithium or
+OptiFine are never needed: Horizon is already native. Remove a mod with `$HL mods remove <name>`, or switch
+it off with `$HL mods disable <name>`. Installing Java-mod content never replaces the M1 build.
+
+**Java modpacks:** `$HL modpack import <file.mrpack>`, then `$HL modpack port <name>` and
+`$HL modpack play <name>`. A modpack becomes its own profile with only the parts Horizon can carry over.
+
+**Rust (native) mods: advanced.**
+Mods written for Horizon can be installed from GitHub with `$HL mods add-github <github link>`. The launcher
+then downloads its own Rust compiler and compiles the mod on your Mac (several GB of disk and some minutes).
+The mod's code runs with full access to your Mac, so only install mods from people you trust. This path is
+not tested with the M1 build. If the game changes or breaks afterwards, run `Install Horizon M1.command`
+again: it selects the M1 build again and keeps your worlds.
 
 ## Tips for smooth FPS on 8 GB
 
@@ -188,6 +237,9 @@ No. Horizon keeps its own data in a separate folder (`~/Library/Application Supp
 
 **How do I turn the shader or packs off?**
 In the game, go to **Options > Video Settings > Shader Packs** and pick no shader, and to **Options > Resource Packs** to move packs off the active list. Turning off the shader helps most if the game stutters.
+
+**Can I use Java mods or my own packs?**
+Resource packs: yes, any. Java mods: only their content (blocks, items, biomes), and only some of them. Rust mods made for Horizon: yes, with a compile step. See [Add your own mods and packs](#add-your-own-mods-and-packs).
 
 **Does it work on Intel Macs or Windows?**
 No. This build is for Apple Silicon Macs (M1, M2, M3 or M4) only.

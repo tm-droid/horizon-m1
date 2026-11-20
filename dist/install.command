@@ -80,10 +80,11 @@ print "$TAG" > "$M1DIR/version.txt"
 # 6. The full look: resource packs + shader. Never overwrites pack files; keeps the player's own packs enabled.
 print ""
 print -P "%BInstall the full look (63 resource packs + MakeUp shader)?%b"
-print "  1) Full look   all packs + shader (about 45 fps on an M1 Air)"
+print "  1) Full look   all packs + shader (recommended, about 45 fps on an M1 Air)"
 print "  2) Fast look   same without Optimized Bushy Leaves (about 58 fps)"
 print "  3) Plain       no packs, no shader (fastest)"
-ask "Type 1, 2 or 3 and press Return:"
+ask "Type 1, 2 or 3 and press Return [1]:"
+[[ -z "$REPLY" ]] && REPLY=1
 if [[ "$REPLY" == [12] ]]; then
   LOOK="$REPLY"
   mkdir -p "$GDIR/resourcepacks" "$GDIR/shaderpacks"
@@ -164,6 +165,8 @@ case "$REPLY" in
     print "  1. Sign in with the Microsoft account that owns Minecraft: Java Edition."
     print "  2. Press Play. The first start prepares the game (a few minutes), later ones are fast."
     print "  Do not press Install on a newer release unless you want to leave the M1 build."
+    print "  Want more mods or packs? See \"Add your own mods and packs\" in the guide:"
+    print "  https://github.com/tm-droid/horizon-m1#add-your-own-mods-and-packs"
     open "$APP"
     ;;
 esac
