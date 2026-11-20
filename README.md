@@ -242,4 +242,4 @@ Tuning and mod work for Horizon (native Rust/Metal Minecraft 26.3 client) on a M
 
 Builds, source clones, screenshots and pack zips stay local (see `.gitignore`).
 
-License: upstream Horizon is LGPL-3.0, see `dist/LICENSES/`. Mods listed in `mods.lock.tsv` belong to their authors and are not included here.
+License: the patches and scripts here are LGPL-3.0 like upstream Horizon (see [LICENSE](LICENSE) and `dist/LICENSES/`). Mods listed in `mods.lock.tsv` belong to their authors and are not included here.

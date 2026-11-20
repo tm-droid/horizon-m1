@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Install guide and FAQ
+    url: https://github.com/tm-droid/horizon-m1#readme
+    about: Most problems are answered in the README's FAQ and Troubleshooting.
