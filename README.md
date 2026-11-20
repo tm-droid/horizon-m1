@@ -7,11 +7,14 @@
 ## Quick start (3 steps)
 
 > **1. Download: [Horizon-M1-daily7.zip](https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1-daily7.zip)**
-> It is a few hundred MB, so it can take a minute or two. That is normal.
+> It is about 210 MB, so it can take a minute or two.
 >
-> **2. Unzip it.** Double-click the zip in your Downloads folder. You get a folder called `Horizon M1`.
+> **2. Unzip it.** Double-click the zip in your Downloads folder. You get a folder called `Horizon M1`. (Safari may unzip it for you: then the folder is already there.)
 >
-> **3. Run the installer.** Right-click `Install Horizon M1.command`, choose **Open**, then click **Open** again in the warning. It asks two questions:
+> **3. Run the installer.** Right-click `Install Horizon M1.command`, choose **Open**, then click **Open** again in the warning.
+> If macOS 15 or newer says it can't be opened: click **Done**, open **System Settings > Privacy & Security**, scroll down, click **Open Anyway**, then open the installer again.
+>
+> A Terminal window opens and asks two questions:
 > - Which look do you want? Type `1`, `2` or `3` (not sure? pick `2`, the fast look: it keeps almost everything and runs smoother).
 > - How do you want to play? Type `1` for a Microsoft account or `2` for offline.
 >
@@ -49,9 +52,9 @@ Release page: <https://github.com/tm-droid/horizon-m1/releases/latest>. The page
 ## Install
 
 1. **Download** the zip from the link above.
-2. **Unzip** it by double-clicking it in Downloads. You get a folder called `Horizon M1`.
+2. **Unzip** it by double-clicking it in Downloads. You get a folder called `Horizon M1`. If Safari already unzipped it, the folder is there already.
 3. **Open the installer.** Right-click `Install Horizon M1.command`, choose **Open**, then click **Open** again in the warning.
-   - On macOS 15 Sequoia or newer, if it says the file can't be opened: go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway**.
+   - On macOS 15 Sequoia or newer, if it says the file can't be opened: click **Done**, go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway**.
    - Still blocked? Open Terminal, run this, then double-click the installer again:
      ```sh
      xattr -dr com.apple.quarantine ~/Downloads/"Horizon M1"
@@ -72,6 +75,8 @@ Pick this if you own Minecraft: Java Edition. You get multiplayer servers and yo
 Pick this if you want to play without signing in. Offline mode works for singleplayer, LAN, and servers that run in offline mode. It does not work on online-mode servers and has no Microsoft skin.
 
 You need Minecraft: Java Edition 26.3 installed and launched at least once, using the official launcher, Prism, Modrinth App, MultiMC, ATLauncher or GDLauncher. Horizon builds its textures and sounds from your own install.
+
+In the official Minecraft Launcher: open **Installations > New installation**, pick version **release 26.3**, save, press **Play** once until the title screen shows, then quit. Do this before running the installer.
 
 1. Type `2` in the installer.
 2. Enter a player name (3 to 16 letters, numbers or `_`).
