@@ -45,3 +45,18 @@ __pycache__/
 /outputs/bench-2026-11-10/shots/
 /outputs/bench-2026-11-10/modshots/
 /outputs/bench-2026-11-10/logs/
+
+# Release packaging: dist/ sources are tracked; the staged folder and zips are built by dist/package.sh
+# and uploaded to GitHub Releases, never committed.
+/dist/out/
+*.zip
+
+# Never publish account, session or personal game data (this repo is public).
+**/accounts.json*
+**/servers.dat*
+**/secrets*
+**/*.token
+**/logs/
+*.log
+**/play-offline.out
+**/horizon-m1/player.txt

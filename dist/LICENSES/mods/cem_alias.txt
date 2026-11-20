@@ -1,0 +1,1 @@
+cem_alias is part of the horizon-m1 repository (https://github.com/tm-droid/horizon-m1), at outputs/horizon-native/cem-alias-fdc87ae. It is part of the modified Horizon build described in CREDITS.md and is distributed under the same LGPL-3.0 terms as Horizon (see Horizon-LICENSE.txt).

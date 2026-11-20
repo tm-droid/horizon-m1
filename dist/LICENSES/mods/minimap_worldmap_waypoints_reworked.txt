@@ -1,0 +1,2 @@
+No license file found in daniliammo/Minimap-Worldmap-and-waypoints-reworked at 20f1d569d4f8b468515525b2b3ad196bcc4c9342; included with credit, all rights remain with the author.
+(The repository was no longer reachable on GitHub when this release was prepared.)

@@ -1,0 +1,21 @@
+Horizon M1 - quick install
+==========================
+
+Horizon is an unofficial native (Rust) version of Minecraft: Java Edition 26.3.
+This build is tuned for Apple Silicon Macs (M1/M2/M3/M4) with 8 GB of memory.
+You need Minecraft: Java Edition. Horizon contains no Minecraft files: it makes
+them on your Mac from your own copy.
+
+1. Right-click "Install Horizon M1.command" and choose Open, then Open again.
+   (macOS 15 or newer may block it: open System Settings > Privacy & Security,
+   scroll down, click "Open Anyway", then try again.)
+2. A Terminal window opens. Follow it:
+   - type 1 for a Microsoft account (normal), then sign in and press Play
+     in the Horizon launcher that opens;
+   - or type 2 for Offline (no sign-in), pick a player name, and play with
+     "Horizon Offline" in your Applications folder. Offline needs Minecraft
+     Java 26.3 installed and launched once in a Minecraft launcher.
+3. Your worlds live in ~/Library/Application Support/horizon
+
+Full guide, troubleshooting and uninstall: https://github.com/tm-droid/horizon-m1#readme
+Credits and licenses: the LICENSES folder.
