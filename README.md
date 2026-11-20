@@ -2,7 +2,7 @@
 
 # Horizon M1: Minecraft for Apple Silicon Macs
 
-Horizon M1 plays Minecraft: Java Edition 26.3 on Apple Silicon Macs. [Horizon](https://github.com/horizon-rust/horizon) ([site](https://playhorizon.dev)) is an unofficial rewrite of the game in Rust, so it runs natively and smoother on an 8 GB M1. This build includes 16 mods and the author's full look (63 resource packs and the MakeUp shader). It has a one-click installer, and you do not need Java.
+Horizon M1 plays Minecraft: Java Edition 26.3 on Apple Silicon Macs. [Horizon](https://github.com/horizon-rust/horizon) ([site](https://playhorizon.dev)) is an unofficial rewrite of the game in Rust, so it runs natively and smoother on an 8 GB M1. This build includes 16 mods and the author's full look (64 resource packs and the MakeUp shader). It has a one-click installer, and you do not need Java.
 
 You need your own Minecraft: Java Edition.
 
@@ -14,8 +14,9 @@ It is about 210 MB, so it can take a minute or two.
 |---|---|
 | ![A sunny forest with the full look](docs/images/day.jpg) | ![Sunset with light rays behind the trees](docs/images/sunset.jpg) |
 | ![Moon and stars over the treeline at night](docs/images/night.jpg) | ![Playing with the HUD: FPS counter and minimap](docs/images/hud.jpg) |
+| ![Animated mobs from Fresh Animations: villager, pig, cow, chicken, horse and sheep](docs/images/mobs.jpg) | |
 
-*Taken on an 8 GB M1 MacBook Air with the full look (63 resource packs and the MakeUp shader).*
+*Taken on an 8 GB M1 MacBook Air with the full look (64 resource packs and the MakeUp shader).*
 
 > Horizon M1 is not affiliated with, endorsed by, or connected to Mojang or Microsoft. It contains no Minecraft game files.
 
@@ -76,7 +77,7 @@ The folder `Horizon M1` holds `Install Horizon M1.command`, `Uninstall Horizon M
 First it asks which look you want:
 
 ```
-Install the full look (63 resource packs + MakeUp shader)?
+Install the full look (64 resource packs + MakeUp shader)?
   1) Full look   all packs + shader (recommended, about 45 fps on an M1 Air)
   2) Fast look   same without Optimized Bushy Leaves (about 58 fps)
   3) Plain       no packs, no shader (fastest)
@@ -248,7 +249,7 @@ The installer puts in the full look from the author's own game. Press Return for
 
 | Choice | What you get | FPS on an M1 Air (85% resolution) |
 |---|---|---|
-| 1. Full look | All 63 packs + MakeUp Ultra Fast shader | about 45 |
+| 1. Full look | All 64 packs + MakeUp Ultra Fast shader | about 45 |
 | 2. Fast look | Same, without Optimized Bushy Leaves | about 58 |
 | 3. Plain | Vanilla textures, no shader | highest |
 
@@ -258,7 +259,7 @@ What the packs do:
 - **3D blocks and plants:** connected bricks and rocks, bushy leaves, colorful leaves and grass, flowers, crops, fungi, vines, carpets, bookshelves, doors, ladders, rails, torches, beds, lanterns.
 - **Items:** Fresh food, buckets, ores, music discs, animated items, armor and trims, totems, glowing ores, a lower shield and fire overlay.
 - **Sky, sound and UI:** Dramatic Skys (slimmed for 8 GB), gentler weather sounds, villager voices, colored subtitles, item icons, darker containers, an improved font.
-- **Horizon compatibility packs** (`Horizon-*-Compatibility`, `Tanush Fixes`): fixes made with this repo's converter so the packs above render correctly in Horizon.
+- **Horizon compatibility packs** (`Horizon-*-Compatibility`, `Tanush Fixes`, `Horizon-Texture-Fixes`): fixes made for Horizon so the packs above render correctly (mob parts, dyed sheep, swords, buckets). The source of `Horizon-Texture-Fixes` is in `dist/fixpack`.
 
 To switch the look in the game, go to **Options > Resource Packs** and **Options > Video Settings > Shader Packs**. The installer never overwrites pack files you already have, and packs you had enabled stay enabled. Pack authors and descriptions: `LICENSES/PACKS.md` in the zip.
 

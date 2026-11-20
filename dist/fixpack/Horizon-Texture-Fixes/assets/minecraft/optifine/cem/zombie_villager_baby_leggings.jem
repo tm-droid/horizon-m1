@@ -1,0 +1,225 @@
+{
+ "credit": "Created by FreshLX for Fresh Animations",
+ "textureSize": [
+  64,
+  64
+ ],
+ "models": [
+  {
+   "part": "head",
+   "id": "head",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    0,
+    0
+   ],
+   "submodels": [
+    {
+     "id": "Created_by_FreshLX_for_Fresh_Animations",
+     "invertAxis": "xy",
+     "translate": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "part": "headwear",
+   "id": "headwear",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    -9,
+    0
+   ],
+   "submodels": [
+    {
+     "id": "head2",
+     "invertAxis": "xy",
+     "translate": [
+      0,
+      9,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "part": "body",
+   "id": "body",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    -5.5,
+    0
+   ],
+   "boxes": [
+    {
+     "coordinates": [
+      -3,
+      3,
+      -1.5,
+      6,
+      5,
+      3
+     ],
+     "textureOffset": [
+      0,
+      33
+     ]
+    }
+   ]
+  },
+  {
+   "part": "right_arm",
+   "id": "right_arm",
+   "invertAxis": "xy",
+   "translate": [
+    -3,
+    -8.5,
+    0
+   ]
+  },
+  {
+   "part": "left_arm",
+   "id": "left_arm",
+   "invertAxis": "xy",
+   "translate": [
+    3,
+    -8.5,
+    0
+   ]
+  },
+  {
+   "part": "right_leg",
+   "id": "right_leg",
+   "invertAxis": "xy",
+   "translate": [
+    -1,
+    -3,
+    0
+   ],
+   "boxes": [
+    {
+     "coordinates": [
+      -0.3,
+      0.32,
+      -1.5,
+      3,
+      3,
+      3
+     ],
+     "uvNorth": [
+      21,
+      21,
+      24,
+      24
+     ],
+     "uvSouth": [
+      27,
+      21,
+      30,
+      24
+     ],
+     "uvUp": [
+      21,
+      17,
+      24,
+      20
+     ],
+     "uvDown": [
+      24,
+      20,
+      27,
+      17
+     ],
+     "sizeAdd": 0.02,
+     "uvEast": [
+      24,
+      21,
+      27,
+      24
+     ],
+     "uvWest": [
+      18,
+      21,
+      21,
+      24
+     ]
+    }
+   ]
+  },
+  {
+   "part": "left_leg",
+   "id": "left_leg",
+   "invertAxis": "xy",
+   "translate": [
+    1,
+    -3,
+    0
+   ],
+   "boxes": [
+    {
+     "coordinates": [
+      -2.7,
+      0.32,
+      -1.5,
+      3,
+      3,
+      3
+     ],
+     "uvNorth": [
+      21,
+      28,
+      24,
+      31
+     ],
+     "uvSouth": [
+      27,
+      28,
+      30,
+      31
+     ],
+     "uvUp": [
+      21,
+      24,
+      24,
+      27
+     ],
+     "uvDown": [
+      24,
+      27,
+      27,
+      24
+     ],
+     "sizeAdd": 0.02,
+     "uvEast": [
+      24,
+      28,
+      27,
+      31
+     ],
+     "uvWest": [
+      18,
+      28,
+      21,
+      31
+     ]
+    }
+   ]
+  },
+  {
+   "part": "waist",
+   "id": "waist",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    0,
+    0
+   ]
+  }
+ ]
+}

@@ -1,0 +1,168 @@
+{
+ "credit": "Created by FreshLX for Fresh Animations",
+ "textureSize": [
+  16,
+  16
+ ],
+ "models": [
+  {
+   "part": "root",
+   "id": "root",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    0,
+    0
+   ],
+   "model": "tadpole_animations.jpm"
+  },
+  {
+   "part": "tail",
+   "id": "tail",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    0,
+    0
+   ],
+   "submodels": [
+    {
+     "id": "Created_by_FreshLX_for_Fresh_Animations",
+     "invertAxis": "xy",
+     "translate": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "part": "body",
+   "id": "body",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    -1,
+    1.5
+   ],
+   "submodels": [
+    {
+     "id": "body2",
+     "invertAxis": "xy",
+     "translate": [
+      0,
+      1,
+      0.5
+     ],
+     "boxes": [
+      {
+       "coordinates": [
+        -1.5,
+        -1,
+        -2,
+        3,
+        2,
+        3
+       ],
+       "uvNorth": [
+        3,
+        3,
+        6,
+        5
+       ],
+       "uvSouth": [
+        9,
+        3,
+        12,
+        5
+       ],
+       "uvUp": [
+        3,
+        0,
+        6,
+        3
+       ],
+       "uvDown": [
+        6,
+        3,
+        9,
+        0
+       ],
+       "uvEast": [
+        6,
+        3,
+        9,
+        5
+       ],
+       "uvWest": [
+        0,
+        3,
+        3,
+        5
+       ]
+      }
+     ],
+     "submodels": [
+      {
+       "id": "tail2",
+       "invertAxis": "xy",
+       "translate": [
+        0,
+        0,
+        0.9
+       ],
+       "boxes": [
+        {
+         "coordinates": [
+          0,
+          -1,
+          0,
+          0,
+          2,
+          3.1
+         ],
+         "uvWest": [
+          4,
+          7,
+          7,
+          9
+         ]
+        }
+       ],
+       "submodels": [
+        {
+         "id": "tail3",
+         "invertAxis": "xy",
+         "translate": [
+          0,
+          0,
+          3.1
+         ],
+         "boxes": [
+          {
+           "coordinates": [
+            0,
+            -1,
+            0,
+            0,
+            2,
+            4
+           ],
+           "uvWest": [
+            0,
+            7,
+            4,
+            9
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

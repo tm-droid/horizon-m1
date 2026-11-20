@@ -64,11 +64,21 @@ done
 "$CLI" settings prune-old-versions off >/dev/null
 say "Selected $TAG in the launcher"
 
-# 4. Starter graphics settings tuned for an 8 GB M1 (only if the game has none yet)
-mkdir -p "$GDIR"
+# 4. The author's settings tuned for an 8 GB M1: video, controls, mod keys and mod configs.
+#    Each file is added only if the player has none yet, so their own settings are never replaced.
+mkdir -p "$GDIR/config"
 if [[ ! -e "$GDIR/horizon-graphics.txt" ]]; then
   cp "$HERE/extras/horizon-graphics.txt" "$GDIR/horizon-graphics.txt"
-  say "Added M1 starter graphics settings"
+  say "Added M1 graphics settings"
+fi
+for f in options.txt horizon-mods.txt; do
+  [[ -e "$GDIR/$f" ]] || cp "$HERE/extras/settings/$f" "$GDIR/$f"
+done
+cp -Rn "$HERE/extras/settings/config/" "$GDIR/config/" 2>/dev/null || true
+# A small minimap (64 instead of the mod's default 128), only if the player has no minimap settings yet.
+MM="$GDIR/horizon-mods/.horizon-mod-data/minimap_worldmap_waypoints_reworked"
+if [[ ! -e "$MM/settings.ini" ]]; then
+  mkdir -p "$MM"; cp "$HERE/extras/minimap/settings.ini" "$MM/settings.ini"
 fi
 
 # 5. Offline helper (always installed, so you can switch later)
@@ -79,7 +89,7 @@ print "$TAG" > "$M1DIR/version.txt"
 
 # 6. The full look: resource packs + shader. Never overwrites pack files; keeps the player's own packs enabled.
 print ""
-print -P "%BInstall the full look (63 resource packs + MakeUp shader)?%b"
+print -P "%BInstall the full look (64 resource packs + MakeUp shader)?%b"
 print "  1) Full look   all packs + shader (recommended, about 45 fps on an M1 Air)"
 print "  2) Fast look   same without Optimized Bushy Leaves (about 58 fps)"
 print "  3) Plain       no packs, no shader (fastest)"

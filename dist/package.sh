@@ -55,12 +55,23 @@ for p in order:
 shader = next(l.split(":", 1)[1].strip() for l in open(f"{gd}/horizon-graphics.txt") if l.startswith("pickedShaderPack:"))
 for f in (shader, shader + ".txt"):
     shutil.copy2(f"{gd}/shaderpacks/{f}", f"{x}/shaderpacks/{f}")
+# The author's own settings (video, controls, mod keys, mod configs). The pack list and the shader are
+# left out: the installer sets them from the look the player picks. lastServer is personal.
+os.makedirs(f"{x}/settings")
+drop = ("resourcePacks:", "incompatibleResourcePacks:", "lastServer:")
+opts = [l for l in open(f"{gd}/options.txt", encoding="utf-8").read().splitlines() if not l.startswith(drop)]
+open(f"{x}/settings/options.txt", "w", encoding="utf-8").write("\n".join(opts) + "\n")
+gfx = ["pickedShaderPack:" if l.startswith("pickedShaderPack:") else l
+       for l in open(f"{gd}/horizon-graphics.txt", encoding="utf-8").read().splitlines()]
+open(f"{x}/horizon-graphics.txt", "w", encoding="utf-8").write("\n".join(gfx) + "\n")
+shutil.copy2(f"{gd}/horizon-mods.txt", f"{x}/settings/horizon-mods.txt")
+shutil.copytree(f"{gd}/config", f"{x}/settings/config")
 with open(credits, "w") as o:
     o.write("# Resource packs and shader\n\n"
             "These packs are included as installed in the author's own game, so the look can be reproduced on\n"
             "another Mac. `Dramatic Skys M1` is Dramatic Skys with smaller sky textures for 8 GB Macs; the other\n"
-            "third-party packs are unmodified. All rights stay with their authors. Packs named `Horizon-*-Compatibility`\n"
-            "and `Tanush Fixes` were made for Horizon M1 (with the converter in `tools/`) from the listed mods' own\n"
+            "third-party packs are unmodified. All rights stay with their authors. Packs named `Horizon-*-Compatibility`"
+            ", `Tanush Fixes` and `Horizon-Texture-Fixes` were made for Horizon M1 (with the tools in this repo) from the listed mods' own\n"
             "assets. If you are an author and want a pack removed, open an issue on\n"
             "https://github.com/tm-droid/horizon-m1 and it is taken down.\n\n"
             f"Shader: `{shader}` (MakeUp Ultra Fast by Javier Garduño), with the settings file used here.\n\n"

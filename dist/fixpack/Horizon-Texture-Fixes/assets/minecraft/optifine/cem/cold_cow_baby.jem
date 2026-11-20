@@ -1,0 +1,493 @@
+{
+ "credit": "Created by FreshLX for Fresh Animations",
+ "textureSize": [
+  64,
+  64
+ ],
+ "models": [
+  {
+   "part": "head",
+   "id": "head",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    0,
+    0
+   ],
+   "submodels": [
+    {
+     "id": "Created_by_FreshLX_for_Fresh_Animations",
+     "invertAxis": "xy",
+     "translate": [
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "animations": [
+    {
+     "varb.21_2_plus": "true",
+     "varb.baby_model": "true",
+     "varb.index_eat": "rule_index==2",
+     "varb.is_mooshroom": "false"
+    }
+   ]
+  },
+  {
+   "part": "root",
+   "id": "root",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    0,
+    0
+   ],
+   "model": "cow_animations.jpm"
+  },
+  {
+   "part": "body",
+   "id": "body",
+   "invertAxis": "xy",
+   "translate": [
+    0,
+    -8,
+    -1
+   ],
+   "boxes": [
+    {
+     "coordinates": [
+      -4,
+      6,
+      -5,
+      8,
+      6,
+      12
+     ],
+     "textureOffset": [
+      0,
+      0
+     ]
+    }
+   ],
+   "submodels": [
+    {
+     "id": "head2",
+     "invertAxis": "xy",
+     "translate": [
+      0,
+      12,
+      -4
+     ],
+     "boxes": [
+      {
+       "coordinates": [
+        -3,
+        -3,
+        -5,
+        6,
+        6,
+        5
+       ],
+       "textureOffset": [
+        0,
+        18
+       ]
+      }
+     ],
+     "submodels": [
+      {
+       "id": "snout",
+       "invertAxis": "xy",
+       "translate": [
+        0,
+        -1,
+        -5
+       ],
+       "boxes": [
+        {
+         "coordinates": [
+          -2,
+          -2,
+          -1,
+          4,
+          3,
+          1
+         ],
+         "textureOffset": [
+          12,
+          29
+         ]
+        }
+       ]
+      },
+      {
+       "id": "horns",
+       "invertAxis": "xy",
+       "translate": [
+        0,
+        0,
+        0
+       ],
+       "boxes": [
+        {
+         "coordinates": [
+          -4,
+          2,
+          -4,
+          1,
+          2,
+          1
+         ],
+         "textureOffset": [
+          8,
+          29
+         ]
+        },
+        {
+         "coordinates": [
+          3,
+          2,
+          -4,
+          1,
+          2,
+          1
+         ],
+         "textureOffset": [
+          4,
+          29
+         ]
+        }
+       ]
+      },
+      {
+       "id": "right_eye",
+       "invertAxis": "xy",
+       "translate": [
+        2,
+        1,
+        -5
+       ],
+       "submodels": [
+        {
+         "id": "r_pupil",
+         "invertAxis": "xy",
+         "translate": [
+          1,
+          -1,
+          0
+         ],
+         "boxes": [
+          {
+           "coordinates": [
+            -1,
+            0,
+            0,
+            1,
+            1,
+            0
+           ],
+           "uvNorth": [
+            1,
+            21,
+            2,
+            22
+           ],
+           "sizeAdd": 0.005
+          }
+         ]
+        },
+        {
+         "id": "r_eye_white",
+         "invertAxis": "xy",
+         "translate": [
+          -1,
+          -1,
+          0
+         ]
+        },
+        {
+         "id": "r_eyelid",
+         "invertAxis": "xy",
+         "translate": [
+          0,
+          0,
+          0
+         ],
+         "boxes": [
+          {
+           "coordinates": [
+            0,
+            0,
+            -0.002,
+            1,
+            1,
+            1
+           ],
+           "uvNorth": [
+            1,
+            20,
+            2,
+            21
+           ],
+           "sizeAdd": 0.01,
+           "uvWest": [
+            0,
+            20,
+            1,
+            21
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "left_eye",
+       "invertAxis": "xy",
+       "translate": [
+        -2,
+        1,
+        -5
+       ],
+       "submodels": [
+        {
+         "id": "l_pupil",
+         "invertAxis": "xy",
+         "translate": [
+          -1,
+          -1,
+          0
+         ],
+         "boxes": [
+          {
+           "coordinates": [
+            0,
+            0,
+            0,
+            1,
+            1,
+            0
+           ],
+           "uvNorth": [
+            3,
+            21,
+            4,
+            22
+           ],
+           "sizeAdd": 0.005
+          }
+         ]
+        },
+        {
+         "id": "l_eye_white",
+         "invertAxis": "xy",
+         "translate": [
+          1,
+          -1,
+          0
+         ]
+        },
+        {
+         "id": "l_eyelid",
+         "invertAxis": "xy",
+         "translate": [
+          0,
+          0,
+          0
+         ],
+         "boxes": [
+          {
+           "coordinates": [
+            -1,
+            0,
+            -0.002,
+            1,
+            1,
+            1
+           ],
+           "uvNorth": [
+            3,
+            20,
+            4,
+            21
+           ],
+           "sizeAdd": 0.01,
+           "uvEast": [
+            4,
+            20,
+            5,
+            21
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "mushroom1",
+       "invertAxis": "xy",
+       "translate": [
+        0,
+        3,
+        -2
+       ]
+      }
+     ]
+    },
+    {
+     "id": "udder",
+     "invertAxis": "xy",
+     "translate": [
+      0,
+      12,
+      7
+     ],
+     "rotate": [
+      -90,
+      0,
+      0
+     ]
+    },
+    {
+     "id": "rotation",
+     "invertAxis": "xy",
+     "translate": [
+      0,
+      8,
+      1
+     ],
+     "rotate": [
+      -90,
+      0,
+      0
+     ],
+     "submodels": [
+      {
+       "id": "mushroom2",
+       "invertAxis": "xy",
+       "translate": [
+        1,
+        2,
+        4
+       ]
+      },
+      {
+       "id": "mushroom3",
+       "invertAxis": "xy",
+       "translate": [
+        -2,
+        -3,
+        4
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "part": "leg1",
+   "id": "leg1",
+   "invertAxis": "xy",
+   "translate": [
+    -2.5,
+    0,
+    -4.5
+   ],
+   "boxes": [
+    {
+     "coordinates": [
+      1,
+      0,
+      3,
+      3,
+      6,
+      3
+     ],
+     "textureOffset": [
+      22,
+      27
+     ]
+    }
+   ]
+  },
+  {
+   "part": "leg2",
+   "id": "leg2",
+   "invertAxis": "xy",
+   "translate": [
+    2.5,
+    0,
+    -4.5
+   ],
+   "boxes": [
+    {
+     "coordinates": [
+      -4,
+      0,
+      3,
+      3,
+      6,
+      3
+     ],
+     "textureOffset": [
+      34,
+      27
+     ]
+    }
+   ]
+  },
+  {
+   "part": "leg3",
+   "id": "leg3",
+   "invertAxis": "xy",
+   "translate": [
+    -2.5,
+    0,
+    2.5
+   ],
+   "boxes": [
+    {
+     "coordinates": [
+      1,
+      0,
+      -4,
+      3,
+      6,
+      3
+     ],
+     "textureOffset": [
+      22,
+      18
+     ]
+    }
+   ]
+  },
+  {
+   "part": "leg4",
+   "id": "leg4",
+   "invertAxis": "xy",
+   "translate": [
+    2.5,
+    0,
+    2.5
+   ],
+   "boxes": [
+    {
+     "coordinates": [
+      -4,
+      0,
+      -4,
+      3,
+      6,
+      3
+     ],
+     "textureOffset": [
+      34,
+      18
+     ]
+    }
+   ]
+  }
+ ]
+}

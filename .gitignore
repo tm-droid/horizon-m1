@@ -70,3 +70,4 @@ AGENTS.md
 **/.Codex__task-ledger.md
 **/CODEX-HANDOFF-*.md
 /outputs/horizon-runtime/checkpoints/codex-*/
+/dist/fixpack/out/

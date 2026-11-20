@@ -23,8 +23,8 @@ AppleSkin, Zoom, Minimap, FPS Overlay, Minimap Worldmap and Waypoints Reworked, 
 
 ## Included look
 
-63 resource packs (Fresh Animations family, 3D blocks and plants, Dramatic Skys, UI packs and Horizon compatibility packs) and the MakeUp Ultra Fast shader. Installed by default; the installer also offers a fast or plain look. Pack credits: `LICENSES/PACKS.md`.
+64 resource packs (Fresh Animations family, 3D blocks and plants, Dramatic Skys, UI packs and Horizon compatibility packs) and the MakeUp Ultra Fast shader. Installed by default; the installer also offers a fast or plain look. Pack credits: `LICENSES/PACKS.md`.
 
 Credits and licenses are in the `LICENSES` folder of the zip. Unofficial; not affiliated with Mojang Studios or Microsoft. No Minecraft assets are included.
 
-SHA-256: 9834e0dc01200150587cf66bdb02823671acabfa1f018bf6ca2e1c9a9c6557f1
+SHA-256: d483e208955dc17df42bbb582c22cf2e1834aaf34b3c27b4d44252ecb459c0c5
