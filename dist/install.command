@@ -77,6 +77,48 @@ cp "$HERE/extras/play-offline.sh" "$M1DIR/play-offline.sh"
 chmod +x "$M1DIR/play-offline.sh"
 print "$TAG" > "$M1DIR/version.txt"
 
+# 6. The full look: resource packs + shader. Never overwrites pack files; keeps the player's own packs enabled.
+print ""
+print -P "%BInstall the full look (63 resource packs + MakeUp shader)?%b"
+print "  1) Full look   all packs + shader (about 45 fps on an M1 Air)"
+print "  2) Fast look   same without Optimized Bushy Leaves (about 58 fps)"
+print "  3) Plain       no packs, no shader (fastest)"
+ask "Type 1, 2 or 3 and press Return:"
+if [[ "$REPLY" == [12] ]]; then
+  LOOK="$REPLY"
+  mkdir -p "$GDIR/resourcepacks" "$GDIR/shaderpacks"
+  cp -n "$HERE/extras/resourcepacks/"*.zip "$GDIR/resourcepacks/" 2>/dev/null || true
+  cp -n "$HERE/extras/shaderpacks/"* "$GDIR/shaderpacks/" 2>/dev/null || true
+  SHADER=$(cd "$HERE/extras/shaderpacks" && command ls *.zip | head -1)
+  /usr/bin/python3 - "$HERE/extras/pack-order.json" "$GDIR" "$LOOK" "$SHADER" <<'PY' || die "Could not write the game settings."
+import json, sys
+order_f, gd, look, shader = sys.argv[1:]
+full = json.load(open(order_f))
+packs = [p for p in full if look == "1" or "Optimized Bushy Leaves" not in p]
+# Keep packs the player enabled themselves, on top (last wins).
+try:
+    line = next(l for l in open(f"{gd}/options.txt", encoding="utf-8") if l.startswith("resourcePacks:"))
+    packs += [p for p in json.loads(line.split(":", 1)[1]) if p not in full]
+except (FileNotFoundError, StopIteration, ValueError):
+    pass
+def put(path, key, value, extra=()):
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except FileNotFoundError:
+        lines = list(extra)
+    new = f"{key}:{value}"
+    for i, l in enumerate(lines):
+        if l.startswith(key + ":"):
+            lines[i] = new; break
+    else:
+        lines.append(new)
+    open(path, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+put(f"{gd}/options.txt", "resourcePacks", json.dumps(packs, separators=(",", ":")), ["incompatibleResourcePacks:[]"])
+put(f"{gd}/horizon-graphics.txt", "pickedShaderPack", shader)
+PY
+  say "Installed the look (resource packs + $SHADER)"
+fi
+
 print ""
 print -P "%BHow will you play?%b"
 print "  1) Microsoft account  (normal: multiplayer servers, your skin)"

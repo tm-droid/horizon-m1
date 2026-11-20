@@ -25,6 +25,48 @@ chmod +x "$ST/Install Horizon M1.command"
 ditto "$D/extras" "$ST/extras"
 ditto "$D/LICENSES" "$ST/LICENSES"
 cp "$D/READ-ME-FIRST.txt" "$ST/READ ME FIRST.txt"
+# The look: every enabled resource pack (options.txt order) and the picked shader with its settings
+# sidecar, from the live game. The installer copies them only if the player picks a look.
+/usr/bin/python3 - "$HOME/Library/Application Support/horizon" "$ST/extras" "$ST/LICENSES/PACKS.md" <<'PY'
+import json, os, re, shutil, sys, zipfile
+gd, x, credits = sys.argv[1:]
+line = next(l for l in open(f"{gd}/options.txt", encoding="utf-8") if l.startswith("resourcePacks:"))
+order = json.loads(line.split(":", 1)[1])
+os.makedirs(f"{x}/resourcepacks"); os.makedirs(f"{x}/shaderpacks")
+json.dump(order, open(f"{x}/pack-order.json", "w"), ensure_ascii=False)
+def text(d):  # pack.mcmeta description: string, text component or list of them
+    if isinstance(d, str): return d
+    if isinstance(d, list): return "".join(text(e) for e in d)
+    if isinstance(d, dict): return text(d.get("text", "")) + text(d.get("extra", []))
+    return ""
+rows = []
+for p in order:
+    if not p.startswith("file/"): continue
+    name = p[5:]; src = f"{gd}/resourcepacks/{name}"
+    shutil.copy2(src, f"{x}/resourcepacks/{name}")
+    try:
+        with zipfile.ZipFile(src) as z:
+            desc = text(json.loads(z.read("pack.mcmeta").decode("utf-8-sig"))["pack"].get("description", ""))
+    except Exception:
+        desc = ""
+    clean = lambda s: re.sub(r"§.", "", s).replace("|", "/").replace("\n", " ").strip()
+    rows.append(f"| {clean(name[:-4] if name.endswith('.zip') else name)} | {clean(desc)} |")
+shader = next(l.split(":", 1)[1].strip() for l in open(f"{gd}/horizon-graphics.txt") if l.startswith("pickedShaderPack:"))
+for f in (shader, shader + ".txt"):
+    shutil.copy2(f"{gd}/shaderpacks/{f}", f"{x}/shaderpacks/{f}")
+with open(credits, "w") as o:
+    o.write("# Resource packs and shader\n\n"
+            "These packs are included as installed in the author's own game, so the look can be reproduced on\n"
+            "another Mac. `Dramatic Skys M1` is Dramatic Skys with smaller sky textures for 8 GB Macs; the other\n"
+            "third-party packs are unmodified. All rights stay with their authors. Packs named `Horizon-*-Compatibility`\n"
+            "and `Tanush Fixes` were made for Horizon M1 (with the converter in `tools/`) from the listed mods' own\n"
+            "assets. If you are an author and want a pack removed, open an issue on\n"
+            "https://github.com/tm-droid/horizon-m1 and it is taken down.\n\n"
+            f"Shader: `{shader}` (MakeUp Ultra Fast by Javier Garduño), with the settings file used here.\n\n"
+            f"{len(rows)} resource packs, in load order (last wins):\n\n| Pack | Description (from pack.mcmeta) |\n|---|---|\n")
+    o.write("\n".join(rows) + "\n")
+print(f"look: {len(rows)} packs + {shader}")
+PY
 find "$ST" -name .DS_Store -delete
 # Build metadata (source-patches.json etc.) records absolute local paths; the launcher never reads them.
 grep -rIl -- "$HOME" "$ST/game" | while IFS= read -r f; do sed -i '' "s#$HOME#~#g" "$f"; done
@@ -55,6 +97,20 @@ for n in $NEEDLES; do
   (( b == 0 )) || { echo "PERSONAL STRING in $b binary file(s)"; FAIL=1; }
 done
 grep -rIEl '[A-Za-z0-9._%+-]+@(gmail|outlook|hotmail|icloud|yahoo)\.' "$ST" | head -3 | sed 's/^/EMAIL in: /' | grep . && FAIL=1
+# Zipped packs hide their text from grep: scan inside every zip too.
+# Third-party LICENSE files carry their authors' emails, so inside zips look for this user's own email only.
+/usr/bin/python3 - "$ST" $NEEDLES "$(git config user.email 2>/dev/null || echo __none__)" <<'PY2' || FAIL=1
+import pathlib, re, sys, zipfile
+st, needles = sys.argv[1], [n.lower().encode() for n in sys.argv[2:] if len(n) >= 3]
+bad = 0
+for f in pathlib.Path(st).rglob("*.zip"):
+    with zipfile.ZipFile(f) as z:
+        for m in z.namelist():
+            b = z.read(m); low = b.lower()
+            if any(n in low for n in needles) or m.endswith((".log", "accounts.json", "servers.dat")):
+                print(f"PERSONAL DATA inside {f.name}: {m}"); bad = 1
+sys.exit(bad)
+PY2
 (( FAIL == 0 )) || { echo "privacy scan failed; zip not built" >&2; exit 1; }
 
 (cd "$OUT/stage" && ditto -c -k --keepParent "Horizon M1" "$ZIP")

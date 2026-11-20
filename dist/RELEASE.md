@@ -13,7 +13,7 @@ Horizon is a native Rust client for Minecraft Java 26.3. This build is tuned for
 1. Download `Horizon-M1-daily7.zip` below.
 2. Unzip it.
 3. Right-click `Install Horizon M1.command`, then choose Open. On macOS 15 and newer, if it is blocked: System Settings > Privacy & Security > Open Anyway.
-4. Choose Microsoft or Offline sign-in.
+4. Choose a look (full, fast or plain), then Microsoft or Offline sign-in.
 
 Full guide: see the README at https://github.com/tm-droid/horizon-m1#readme
 
@@ -21,6 +21,10 @@ Full guide: see the README at https://github.com/tm-droid/horizon-m1#readme
 
 AppleSkin, Zoom, Minimap, FPS Overlay, Minimap Worldmap and Waypoints Reworked, Fullbright, Armor Status, Status Effect HUD, Toggle Sprint, Light Overlay, Chat Heads, Held Item Info, Jade, Dynamic FPS for Rust, Crosshair Indicator, Dynamic Lights, CEM Alias
 
+## Included look
+
+63 resource packs (Fresh Animations family, 3D blocks and plants, Dramatic Skys, UI packs and Horizon compatibility packs) and the MakeUp Ultra Fast shader. Optional: the installer asks. Pack credits: `LICENSES/PACKS.md`.
+
 Credits and licenses are in the `LICENSES` folder of the zip. Unofficial; not affiliated with Mojang Studios or Microsoft. No Minecraft assets are included.
 
-SHA-256: 050d4f62a395635414c4ba41dcf56b45e3e0e4b2df32709bdac2fd373b062602
+SHA-256: 6fffbc82f06db5f9e4d64392acf9e612dd848c5fd5624fae6b5fb3c0c4a88ad9

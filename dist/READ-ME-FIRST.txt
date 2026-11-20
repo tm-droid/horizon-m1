@@ -10,6 +10,7 @@ them on your Mac from your own copy.
    (macOS 15 or newer may block it: open System Settings > Privacy & Security,
    scroll down, click "Open Anyway", then try again.)
 2. A Terminal window opens. Follow it:
+   - pick a look: 1 full (all packs + shader), 2 fast, 3 plain;
    - type 1 for a Microsoft account (normal), then sign in and press Play
      in the Horizon launcher that opens;
    - or type 2 for Offline (no sign-in), pick a player name, and play with
