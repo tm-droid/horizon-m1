@@ -123,7 +123,7 @@ fi
 print ""
 print -P "%BHow will you play?%b"
 print "  1) Microsoft account  (normal: multiplayer servers, your skin)"
-print "  2) Offline            (no sign-in: singleplayer and LAN only)"
+print "  2) Offline            (no sign-in: singleplayer, LAN and offline-mode servers)"
 ask "Type 1 or 2 and press Return:"
 case "$REPLY" in
   2)
@@ -148,14 +148,15 @@ case "$REPLY" in
       fi
     done
 
-    say "Making 'Horizon Offline' in your Applications folder"
+    say "Making the 'Horizon Offline' app (you will find it in Launchpad)"
     OAPP="$HOME/Applications/Horizon Offline.app"
     mkdir -p "$HOME/Applications"; rm -rf "$OAPP"
     osacompile -o "$OAPP" -e "do shell script quoted form of \"$M1DIR/play-offline.sh\"" 2>/dev/null
     cp "$APP/Contents/Resources/"*.icns "$OAPP/Contents/Resources/applet.icns" 2>/dev/null || true
     touch "$OAPP"
     print ""
-    print -P "%F{green}%BDone.%b%f Open %BHorizon Offline%b (Launchpad or ~/Applications) to play as $NAME."
+    print -P "%F{green}%BDone.%b%f Next time, open %BHorizon Offline%b from Launchpad to play as $NAME"
+    print "  (or Finder > Go > Home > Applications). It shows no window of its own: the game opens after a few seconds."
     ask "Start it now? (y/n)"
     [[ "$REPLY" == [yY]* ]] && open "$OAPP"
     ;;

@@ -6,17 +6,26 @@ This build is tuned for Apple Silicon Macs (M1/M2/M3/M4) with 8 GB of memory.
 You need Minecraft: Java Edition. Horizon contains no Minecraft files: it makes
 them on your Mac from your own copy.
 
-1. Right-click "Install Horizon M1.command" and choose Open, then Open again.
-   (macOS 15 or newer may block it: open System Settings > Privacy & Security,
-   scroll down, click "Open Anyway", then try again.)
-2. A Terminal window opens. Follow it:
-   - pick a look: 1 full (all packs + shader), 2 fast, 3 plain;
-   - type 1 for a Microsoft account (normal), then sign in and press Play
+1. Control-click (or two-finger click) "Install Horizon M1.command", choose
+   Open, then Open again. A plain double-click will not work the first time.
+   (macOS 15 or newer may block it: click Done, then Apple menu > System
+   Settings > Privacy & Security, scroll to the bottom, click "Open Anyway"
+   next to the installer's name, and open it again.)
+2. A Terminal window (a text window, that is normal) asks two questions.
+   Type the number and press Return:
+   - the look: 1 full (all packs + shader), 2 fast, 3 plain.
+     Just pressing Return picks 1, the full look;
+   - how you play: 1 Microsoft account (normal), then sign in and press Play
      in the Horizon launcher that opens;
-   - or type 2 for Offline (no sign-in), pick a player name, and play with
-     "Horizon Offline" in your Applications folder. Offline needs Minecraft
-     Java 26.3 installed and launched once in a Minecraft launcher.
-3. Your worlds live in ~/Library/Application Support/horizon
+     or 2 Offline (no sign-in): pick a player name, then play with
+     "Horizon Offline" from Launchpad. Offline needs Minecraft Java 26.3
+     installed and launched once in a Minecraft launcher first.
+3. Next time: open Horizon (Microsoft) or Horizon Offline from Launchpad.
+   No need to run the installer again.
+4. Your worlds live in ~/Library/Application Support/horizon
 
-Full guide, troubleshooting and uninstall: https://github.com/tm-droid/horizon-m1#readme
+To remove it: Control-click "Uninstall Horizon M1.command" > Open. It moves
+Horizon to the Trash and asks before touching your worlds.
+
+Full guide and troubleshooting: https://github.com/tm-droid/horizon-m1#readme
 Credits and licenses: the LICENSES folder.

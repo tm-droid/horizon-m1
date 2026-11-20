@@ -27,4 +27,4 @@ AppleSkin, Zoom, Minimap, FPS Overlay, Minimap Worldmap and Waypoints Reworked, 
 
 Credits and licenses are in the `LICENSES` folder of the zip. Unofficial; not affiliated with Mojang Studios or Microsoft. No Minecraft assets are included.
 
-SHA-256: 5005832ad23fdf959328020a8bb51f627231d7948fc2a5816b806fc74e3f66bb
+SHA-256: 9834e0dc01200150587cf66bdb02823671acabfa1f018bf6ca2e1c9a9c6557f1

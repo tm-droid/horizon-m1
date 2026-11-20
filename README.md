@@ -1,47 +1,39 @@
-# Horizon M1: a tuned Minecraft client for Apple Silicon Macs
+![Latest release](https://img.shields.io/github/v/release/tm-droid/horizon-m1) ![Downloads](https://img.shields.io/github/downloads/tm-droid/horizon-m1/total) ![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-black)
 
-[Horizon](https://github.com/horizon-rust/horizon) ([site](https://playhorizon.dev)) is an unofficial rewrite of Minecraft: Java Edition 26.3 in Rust. It runs natively on Apple Silicon, with no Java needed to play. **Horizon M1** is a build of it tuned for a MacBook Air M1 with 8 GB of RAM, plus a one-click installer, a set of handy mods (minimap, zoom, FPS counter and more) and the full look of the original setup: 63 resource packs and the MakeUp shader.
+# Horizon M1: Minecraft for Apple Silicon Macs
 
-> Horizon M1 is not affiliated with, endorsed by, or connected to Mojang or Microsoft. It contains no Minecraft game files. You need your own copy of Minecraft: Java Edition.
+Horizon M1 plays Minecraft: Java Edition 26.3 on Apple Silicon Macs. [Horizon](https://github.com/horizon-rust/horizon) ([site](https://playhorizon.dev)) is an unofficial rewrite of the game in Rust, so it runs natively and smoother on an 8 GB M1. This build includes 16 mods and the author's full look (63 resource packs and the MakeUp shader). It has a one-click installer, and you do not need Java.
 
-## Quick start (3 steps)
+You need your own Minecraft: Java Edition.
 
-> **1. Download: [Horizon-M1-daily7.zip](https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1-daily7.zip)**
-> It is about 210 MB, so it can take a minute or two.
->
-> **2. Unzip it.** Double-click the zip in your Downloads folder. You get a folder called `Horizon M1`. (Safari may unzip it for you: then the folder is already there.)
->
-> **3. Run the installer.** Right-click `Install Horizon M1.command`, choose **Open**, then click **Open** again in the warning.
-> If macOS 15 or newer says it can't be opened: click **Done**, open **System Settings > Privacy & Security**, scroll down, click **Open Anyway**, then open the installer again.
->
-> A Terminal window opens and asks two questions:
-> - Which look do you want? Type `1`, `2` or `3` (just press Return for the full look; pick `2` if you want more FPS).
-> - How do you want to play? Type `1` for a Microsoft account or `2` for offline.
->
-> Then follow the on-screen steps. Details for each choice are below.
+## [Download Horizon-M1-daily7.zip](https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1-daily7.zip)
+
+It is about 210 MB, so it can take a minute or two.
+
+| | |
+|---|---|
+| ![A sunny forest with the full look](docs/images/day.jpg) | ![Sunset with light rays behind the trees](docs/images/sunset.jpg) |
+| ![Moon and stars over the treeline at night](docs/images/night.jpg) | ![Playing with the HUD: FPS counter and minimap](docs/images/hud.jpg) |
+
+*Taken on an 8 GB M1 MacBook Air with the full look (63 resource packs and the MakeUp shader).*
+
+> Horizon M1 is not affiliated with, endorsed by, or connected to Mojang or Microsoft. It contains no Minecraft game files.
 
 ## Contents
 
 - [Requirements](#requirements)
-- [Install](#install)
-- [Playing](#playing)
-- [Included mods](#included-mods)
-- [The look: resource packs and shader](#the-look-resource-packs-and-shader)
-- [Add your own mods and packs](#add-your-own-mods-and-packs)
+- [Quick start](#quick-start)
+- [Playing next time](#playing-next-time)
+- [Install details](#install-details)
+- [Controls](#controls)
 - [Tips for smooth FPS on 8 GB](#tips-for-smooth-fps-on-8-gb)
-- [Updating](#updating)
-- [Where things live](#where-things-live)
 - [FAQ](#faq)
 - [Troubleshooting](#troubleshooting)
 - [Uninstall](#uninstall)
+- [What's included](#whats-included)
+- [Advanced](#advanced)
 - [Credits and licenses](#credits-and-licenses)
 - [For developers](#for-developers)
-
-## Download
-
-**[Download Horizon-M1-daily7.zip](https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1-daily7.zip)**
-
-Release page: <https://github.com/tm-droid/horizon-m1/releases/latest>. The page lists the SHA-256 checksum of the zip. To check your download, run `shasum -a 256 ~/Downloads/Horizon-M1-daily7.zip` in Terminal and compare the result with the release page.
 
 ## Requirements
 
@@ -50,41 +42,91 @@ Release page: <https://github.com/tm-droid/horizon-m1/releases/latest>. The page
 - About 2 GB of free disk space.
 - Minecraft: Java Edition (for a Microsoft account, or for the offline option below).
 
-## Install
+## Quick start
 
-1. **Download** the zip from the link above.
-2. **Unzip** it by double-clicking it in Downloads. You get a folder called `Horizon M1`. If Safari already unzipped it, the folder is there already.
-3. **Open the installer.** Right-click `Install Horizon M1.command`, choose **Open**, then click **Open** again in the warning.
-   - On macOS 15 Sequoia or newer, if it says the file can't be opened: click **Done**, go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway**.
-   - Still blocked? Open Terminal, run this, then double-click the installer again:
-     ```sh
-     xattr -dr com.apple.quarantine ~/Downloads/"Horizon M1"
-     ```
+1. **Download** the zip with the big link at the top of this page.
+2. **Open the zip.** Open Finder and click **Downloads** in the sidebar. Double-click `Horizon-M1-daily7.zip`. You get a folder called `Horizon M1`. (Safari may have unzipped it for you. Then the folder is already there.)
+3. **Open the installer.** Inside the folder, Control-click `Install Horizon M1.command` (or click it with two fingers). Choose **Open**, then click **Open** again in the warning. A normal double-click does not work the first time.
+4. **If macOS blocks it** (macOS 15 or newer): click **Done**. Click the Apple menu, then **System Settings**, then **Privacy & Security**. Scroll to the bottom. Click **Open Anyway** next to the installer's name. Type your Mac password if it asks. Then open the installer again (step 3).
+5. **Answer two questions.** A Terminal window opens. This is a text window, and it is normal. It asks two questions. Type the number and press Return (the Enter key).
+   - "Install the full look?" Type `1`, `2` or `3`. Just pressing Return gives you `1`, the full look.
+   - "How will you play?" Type `1` for a Microsoft account, or `2` for offline.
 
-The installer copies `Horizon.app` (the official launcher) to `/Applications`, installs the tuned build, selects it, and turns off the launcher's auto-install of new versions so the M1 build stays selected. It also adds starter graphics settings if you have none. Then it asks two questions: which look you want (see [The look](#the-look-resource-packs-and-shader)) and how you want to play.
+   When it says **Done**:
+   - **Microsoft account:** the Horizon launcher opens. Sign in, then press **Play**. The first start prepares files and takes a few minutes.
+   - **Offline:** it asks for a player name, then makes an app called "Horizon Offline". At "Start it now? (y/n)" type `y` to play.
+
+Offline needs the real Minecraft Java 26.3 installed and opened once first. See [Offline](#b-offline-no-sign-in) below.
+
+## Playing next time
+
+You do not need to run the installer again.
+
+- **Microsoft account:** open **Horizon** from Launchpad or the Applications folder, then press **Play**.
+- **Offline:** open **Horizon Offline** from Launchpad. It shows no window of its own. The game window appears after a few seconds. If nothing appears, see [Troubleshooting](#troubleshooting).
+
+## Install details
+
+Quit Horizon first if it is open. The installer refuses to run while the Horizon game or launcher is open ("Quit it (Cmd+Q) first").
+
+The installer copies `Horizon.app` (the official launcher) to `/Applications`, installs the tuned build, selects it, and turns off the launcher's auto-install of new versions so the M1 build stays selected. It also adds starter graphics settings if you have none.
+
+The folder `Horizon M1` holds `Install Horizon M1.command`, `Uninstall Horizon M1.command`, `READ ME FIRST.txt` and a `LICENSES` folder.
+
+First it asks which look you want:
+
+```
+Install the full look (63 resource packs + MakeUp shader)?
+  1) Full look   all packs + shader (recommended, about 45 fps on an M1 Air)
+  2) Fast look   same without Optimized Bushy Leaves (about 58 fps)
+  3) Plain       no packs, no shader (fastest)
+Type 1, 2 or 3 and press Return [1]:
+```
+
+Pressing Return alone picks 1. More about the choices is in [The look](#the-look-resource-packs-and-shader).
+
+Then it asks how you will play:
+
+```
+How will you play?
+  1) Microsoft account  (normal: multiplayer servers, your skin)
+  2) Offline            (no sign-in: singleplayer, LAN and offline-mode servers)
+Type 1 or 2 and press Return:
+```
 
 ### A. Microsoft account
 
 Pick this if you own Minecraft: Java Edition. You get multiplayer servers and your skin.
 
-1. Type `1` in the installer. The Horizon launcher opens.
+1. Type `1` in the installer. It prints Done and the Horizon launcher opens.
 2. Sign in with the Microsoft account that owns Minecraft: Java Edition.
 3. Press **Play**. The first start prepares the game files and takes a few minutes. Later starts are fast.
 
 ### B. Offline (no sign-in)
 
-Pick this if you want to play without signing in. Offline mode works for singleplayer, LAN, and servers that run in offline mode. It does not work on online-mode servers and has no Microsoft skin.
+Pick this if you want to play without signing in. Offline mode works for singleplayer, LAN, and servers that run in offline mode. Most public servers (like Hypixel) will not let offline players in. Offline mode has no Microsoft skin.
 
 You need Minecraft: Java Edition 26.3 installed and launched at least once, using the official launcher, Prism, Modrinth App, MultiMC, ATLauncher or GDLauncher. Horizon builds its textures and sounds from your own install.
 
 In the official Minecraft Launcher: open **Installations > New installation**, pick version **release 26.3**, save, press **Play** once until the title screen shows, then quit. Do this before running the installer.
 
 1. Type `2` in the installer.
-2. Enter a player name (3 to 16 letters, numbers or `_`).
-3. The installer prepares the game from your Minecraft install. If it can't find it, drag your Minecraft launcher's game folder into the Terminal window when it asks (or see [Troubleshooting](#troubleshooting)).
-4. It creates `~/Applications/Horizon Offline.app`. Open it from Launchpad or that folder to play.
+2. At "Pick a player name (3-16 letters, numbers or _):" type a name of 3 to 16 letters, numbers or `_`.
+3. The installer prepares the game from Minecraft 26.3. If it can't find it, it asks "Folder (or Return to try again, q to quit):". Your Minecraft game folder is normally `~/Library/Application Support/minecraft`. To find it in Finder, press Cmd+Shift+G, paste that path and press Return. Then drag the folder into the Terminal window and press Return. (For other launchers, drag the game folder that holds `versions` and `assets`.)
+4. It creates the "Horizon Offline" app. It shows up in Launchpad. The file is in your home folder's Applications folder: in Finder choose **Go > Home**, then open **Applications**. (The path is `~/Applications/Horizon Offline.app`.)
+5. It asks "Start it now? (y/n)". Type `y` to play.
 
-## Playing
+### Still blocked by macOS?
+
+Open Terminal: press Cmd+Space, type `Terminal`, press Return. Paste this line and press Return, then double-click the installer again:
+
+```sh
+xattr -dr com.apple.quarantine ~/Downloads/"Horizon M1"
+```
+
+If you moved the `Horizon M1` folder out of Downloads, change the path to where it is now.
+
+## Controls
 
 Basic controls (the usual Minecraft ones):
 
@@ -108,7 +150,83 @@ Basic controls (the usual Minecraft ones):
 
 Keys added by mods (zoom, minimap and so on) can be changed in **Options > Controls**.
 
-## Included mods
+## Tips for smooth FPS on 8 GB
+
+FPS means frames per second. Higher is smoother.
+
+- Close Chrome and other heavy apps. When macOS starts swapping memory to disk, FPS collapses.
+- Set render distance to 10 to 12.
+- In Video Settings, set resolution scale to 70 to 85. A lower resolution scale draws fewer pixels, so you get more FPS.
+- Plug in the charger.
+- The shader roughly halves FPS. Turn it off in Shader Packs if the game stutters.
+- Optimized Bushy Leaves costs about 12 FPS and 320 MB of memory. Choose the Fast look, or turn it off in Resource Packs.
+
+## FAQ
+
+**Do I need to buy Minecraft?**
+For the Microsoft option, yes: you sign in with an account that owns Minecraft: Java Edition. The offline option does not sign in, but it still needs Minecraft: Java Edition 26.3 installed (and launched once) through a launcher, because Horizon builds its textures and sounds from that install. Horizon M1 contains no Minecraft game files.
+
+**Is this safe? Why does macOS show a warning?**
+The installer and app are not signed by Apple (that costs a yearly developer fee). They are downloaded from GitHub. macOS warns about anything that does not come from the App Store or a paid Apple developer account, so the warning is expected. To open it anyway, Control-click the installer, choose **Open**, then **Open** again. If that fails, use **Open Anyway** in **System Settings > Privacy & Security**, or the `xattr` command in [Install details](#install-details). The source patches are in this repo, and the release page lists the zip's SHA-256 checksum so you can check your download (see [Check your download](#check-your-download)).
+
+**Can I play with friends?**
+With a Microsoft account, yes: join online servers that support Minecraft 26.3. Offline mode only works on LAN and on servers set to offline mode. Most public servers, like Hypixel, will not let offline players in.
+
+**Will it delete my Java Minecraft worlds?**
+No. Horizon keeps its own data in a separate folder (`~/Library/Application Support/horizon`) and only reads from your Minecraft install. Your old worlds are not touched.
+
+**How do I turn the shader or packs off?**
+In the game, go to **Options > Video Settings > Shader Packs** and pick no shader, and to **Options > Resource Packs** to move packs off the active list. Turning off the shader helps most if the game stutters.
+
+**Can I use Java mods or my own packs?**
+Resource packs: yes, any. Java mods: only their content (blocks, items, biomes), and only some of them. Rust mods made for Horizon: yes, with a compile step. See [Add your own mods and packs](#add-your-own-mods-and-packs).
+
+**Does it work on Intel Macs or Windows?**
+No. This build is for Apple Silicon Macs (M1, M2, M3 or M4) only.
+
+## Troubleshooting
+
+**macOS says the installer is "damaged" or "can't be opened".**
+Follow the steps in [Quick start](#quick-start), steps 3 and 4: Control-click > Open, **Open Anyway** in System Settings, or the `xattr` command in [Install details](#install-details).
+
+**The installer says the Horizon game or launcher is open.**
+Quit it with Cmd+Q, then run the installer again.
+
+**The installer says it "could not find Minecraft 26.3".**
+Launch Minecraft: Java Edition 26.3 once in your Minecraft launcher, then run the installer again. Or drag the launcher's game folder (the one holding `versions` and `assets`) into the installer window when it asks, then press Return. See [B. Offline](#b-offline-no-sign-in).
+
+**The game crashes or won't start.**
+Print the logs with:
+```sh
+/Applications/Horizon.app/Contents/MacOS/horizon-launcher logs
+```
+To get a link you can send to someone for help, run:
+```sh
+/Applications/Horizon.app/Contents/MacOS/horizon-launcher share-log
+```
+
+**Horizon Offline does nothing when I open it.**
+It shows no window of its own, and the game window can take a few seconds. If nothing appears, check `~/Library/Application Support/horizon/logs/play-offline.out`.
+
+**Low FPS.**
+See the [tips above](#tips-for-smooth-fps-on-8-gb).
+
+## Uninstall
+
+Double-click `Uninstall Horizon M1.command` in the `Horizon M1` folder (open it the same way as the installer). It moves Horizon to the Trash. It asks before it touches your worlds. Type `DELETE` if you also want your worlds moved to the Trash.
+
+To do it by hand, delete these:
+
+- `/Applications/Horizon.app`
+- `~/Applications/Horizon Offline.app`
+- `~/Library/Application Support/horizon-launcher`
+- `~/Library/Application Support/horizon`
+
+Warning: the `horizon` folder holds your worlds. Back it up first if you want to keep them.
+
+## What's included
+
+### Mods
 
 | Mod | What it does | Author |
 |---|---|---|
@@ -124,7 +242,7 @@ Keys added by mods (zoom, minimap and so on) can be changed in **Options > Contr
 
 Full credits and licenses: `LICENSES/CREDITS.md` inside the zip, or [dist/LICENSES/CREDITS.md](dist/LICENSES/CREDITS.md) in this repo.
 
-## The look: resource packs and shader
+### The look: resource packs and shader
 
 The installer puts in the full look from the author's own game. Press Return for it, or pick a lighter one:
 
@@ -142,11 +260,13 @@ What the packs do:
 - **Sky, sound and UI:** Dramatic Skys (slimmed for 8 GB), gentler weather sounds, villager voices, colored subtitles, item icons, darker containers, an improved font.
 - **Horizon compatibility packs** (`Horizon-*-Compatibility`, `Tanush Fixes`): fixes made with this repo's converter so the packs above render correctly in Horizon.
 
-You can change any of this in the game: **Options > Resource Packs** and **Options > Video Settings > Shader Packs**. The installer never overwrites pack files you already have, and packs you had enabled stay enabled. Pack authors and descriptions: `LICENSES/PACKS.md` in the zip.
+To switch the look in the game, go to **Options > Resource Packs** and **Options > Video Settings > Shader Packs**. The installer never overwrites pack files you already have, and packs you had enabled stay enabled. Pack authors and descriptions: `LICENSES/PACKS.md` in the zip.
 
 ### Why only 16 mods?
 
 The original Java setup had 259 mod JARs. Horizon is written in Rust, so Java mods can't run in it. Mods have to be rewritten for Horizon, and the 16 in the table above are the ones that exist so far. Most of the old look came from resource packs and a shader, and those work in Horizon. The converter in `tools/horizon-convert.py` turned the rest into the compatibility packs. It needs a Java Minecraft instance to read from, so it is a developer tool: you get its output in the zip and don't need to run it.
+
+## Advanced
 
 ### Add your own mods and packs
 
@@ -196,16 +316,7 @@ The mod's code runs with full access to your Mac, so only install mods from peop
 not tested with the M1 build. If the game changes or breaks afterwards, run `Install Horizon M1.command`
 again: it selects the M1 build again and keeps your worlds.
 
-## Tips for smooth FPS on 8 GB
-
-- Close Chrome and other heavy apps. When macOS starts swapping memory to disk, FPS collapses.
-- Set render distance to 10 to 12.
-- In Video Settings, set resolution scale to 70 to 85.
-- Plug in the charger.
-- The shader roughly halves FPS. Turn it off in Shader Packs if the game stutters.
-- Optimized Bushy Leaves costs about 12 FPS and 320 MB of memory. Choose the Fast look, or turn it off in Resource Packs.
-
-## Updating
+### Updating
 
 - The launcher may offer newer Horizon releases. The installer turned off auto-install so the M1 build stays selected. Only install a newer release if you want to leave the M1 build.
 - To go back after trying another version, pick the M1 build in the launcher under Settings > selected version, or run:
@@ -214,70 +325,16 @@ again: it selects the M1 build again and keeps your worlds.
   ```
 - For a new M1 build, download the new zip and run its installer. Your worlds are kept.
 
-## Where things live
+### Where things live
 
 | What | Location |
 |---|---|
 | Worlds and game settings | `~/Library/Application Support/horizon` |
 | Launcher and installed builds | `~/Library/Application Support/horizon-launcher` |
 
-## FAQ
+### Check your download
 
-**Do I need to buy Minecraft?**
-For the Microsoft option, yes: you sign in with an account that owns Minecraft: Java Edition. The offline option does not sign in, but it still needs Minecraft: Java Edition 26.3 installed (and launched once) through a launcher, because Horizon builds its textures and sounds from that install. Horizon M1 contains no Minecraft game files.
-
-**Is this safe? Why does macOS show a warning?**
-The installer and app are unsigned (ad-hoc signed) builds downloaded from GitHub. macOS warns about anything that does not come from the App Store or a paid Apple developer account, so the warning is expected. To open it anyway, right-click the installer, choose **Open**, then **Open** again; if that fails, use **Open Anyway** in **System Settings > Privacy & Security**, or the `xattr` command in [Install](#install). The source patches are in this repo, and the release page lists the zip's SHA-256 checksum so you can check your download.
-
-**Can I play with friends?**
-With a Microsoft account, yes: join online servers that support Minecraft 26.3. Offline mode only works on LAN and on servers set to offline mode, not on online-mode servers.
-
-**Will it delete my Java Minecraft worlds?**
-No. Horizon keeps its own data in a separate folder (`~/Library/Application Support/horizon`) and only reads from your Minecraft install. Your old worlds are not touched.
-
-**How do I turn the shader or packs off?**
-In the game, go to **Options > Video Settings > Shader Packs** and pick no shader, and to **Options > Resource Packs** to move packs off the active list. Turning off the shader helps most if the game stutters.
-
-**Can I use Java mods or my own packs?**
-Resource packs: yes, any. Java mods: only their content (blocks, items, biomes), and only some of them. Rust mods made for Horizon: yes, with a compile step. See [Add your own mods and packs](#add-your-own-mods-and-packs).
-
-**Does it work on Intel Macs or Windows?**
-No. This build is for Apple Silicon Macs (M1, M2, M3 or M4) only.
-
-## Troubleshooting
-
-**macOS says the installer is "damaged" or "can't be opened".**
-Follow the quarantine steps in Install, step 3: right-click > Open, **Open Anyway** in System Settings, or the `xattr` command.
-
-**The installer says it "could not find Minecraft 26.3".**
-Launch Minecraft: Java Edition 26.3 once in your Minecraft launcher, then run the installer again. Or drag the launcher's game folder (the one holding `versions` and `assets`) into the installer window when it asks.
-
-**The game crashes or won't start.**
-Print the logs with:
-```sh
-/Applications/Horizon.app/Contents/MacOS/horizon-launcher logs
-```
-To get a link you can send to someone for help, run:
-```sh
-/Applications/Horizon.app/Contents/MacOS/horizon-launcher share-log
-```
-
-**Horizon Offline does nothing when I open it.**
-Check `~/Library/Application Support/horizon/logs/play-offline.out`.
-
-**Low FPS.**
-See the [tips above](#tips-for-smooth-fps-on-8-gb).
-
-## Uninstall
-
-Delete these:
-
-- `/Applications/Horizon.app`
-- `~/Applications/Horizon Offline.app`
-- `~/Library/Application Support/horizon-launcher`
-- `~/Library/Application Support/horizon`
-
-Warning: the `horizon` folder holds your worlds. Back it up first if you want to keep them.
+Release page: <https://github.com/tm-droid/horizon-m1/releases/latest>. The page lists the SHA-256 checksum of the zip. To check your download, run `shasum -a 256 ~/Downloads/Horizon-M1-daily7.zip` in Terminal and compare the result with the release page.
 
 ## Credits and licenses
 

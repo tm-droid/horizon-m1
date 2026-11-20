@@ -22,6 +22,7 @@ for t in "$BASE" "$TAG"; do
 done
 sed -e "s/__TAG__/$TAG/" -e "s/__BASE__/$BASE/" "$D/install.command" > "$ST/Install Horizon M1.command"
 chmod +x "$ST/Install Horizon M1.command"
+cp "$D/uninstall.command" "$ST/Uninstall Horizon M1.command"; chmod +x "$ST/Uninstall Horizon M1.command"
 ditto "$D/extras" "$ST/extras"
 ditto "$D/LICENSES" "$ST/LICENSES"
 cp "$D/READ-ME-FIRST.txt" "$ST/READ ME FIRST.txt"
