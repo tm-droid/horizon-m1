@@ -3,8 +3,9 @@
 Each section is one Horizon M1 build. `dist/release.sh` copies the section of the build it publishes into the
 release notes, so add the section before releasing.
 
-<!-- Rename "Unreleased" to the build's short name (for example daily8-fix1) before running dist/release.sh. -->
-## Unreleased
+## daily7-fix4
+
+Same game build as daily7-fix3; only the look and the installer change.
 
 - Faster full look: Optimized Bushy Leaves is removed (about +12 fps and 320 MB less memory on an M1 Air).
   The full look is now 63 packs at about 58 fps.
