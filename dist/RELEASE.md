@@ -22,7 +22,7 @@ Already have Horizon M1? Open the **Horizon M1** app: it offers this update by i
 1. Download `Horizon-M1.zip` below.
 2. Unzip it.
 3. Right-click `Install Horizon M1.command`, then choose Open. On macOS 15 and newer, if it is blocked: System Settings > Privacy & Security > Open Anyway.
-4. Choose a look (full, fast or plain), then Microsoft or Offline sign-in.
+4. Choose a look (full or plain), then Microsoft or Offline sign-in.
 
 Full guide: https://github.com/tm-droid/horizon-m1#readme
 
