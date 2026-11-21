@@ -1,0 +1,16 @@
+name: Idea or request
+description: A mod, pack, setting or installer change you would like
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: For a mod or pack, add a link to it.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why?
+      description: What it would make better for you.

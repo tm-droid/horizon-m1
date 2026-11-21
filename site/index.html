@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Horizon M1</title>
+<meta name="description" content="Minecraft Java 26.3 for Apple Silicon Macs: an M1-tuned Horizon (native Rust) build with 16 mods, 64 resource packs and a shader. One-line install, updates itself.">
+<meta property="og:title" content="Horizon M1: Minecraft for Apple Silicon Macs">
+<meta property="og:description" content="Native Rust Minecraft Java 26.3, tuned for 8 GB M1 Macs. One-line install, updates itself.">
+<meta property="og:image" content="https://tm-droid.github.io/horizon-m1/images/social.jpg">
+<style>
+  :root {
+    --bg: #f6f7f9; --fg: #16181d; --muted: #5b6270; --card: #ffffff; --line: #dfe2e8;
+    --accent: #2f6fde; --accent-fg: #ffffff; --code: #0f1115; --code-fg: #e8eaf0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --fg: #e8eaf0; --muted: #9aa2b1; --card: #171a21; --line: #2a2f3a;
+            --accent: #5b92f0; --accent-fg: #0f1115; --code: #050608; --code-fg: #e8eaf0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 2.2rem; line-height: 1.15; margin: 0 0 8px; }
+  h2 { font-size: 1.25rem; margin: 40px 0 12px; }
+  p { margin: 0 0 12px; }
+  .lead { color: var(--muted); font-size: 1.1rem; max-width: 640px; }
+  .hero { border-radius: 12px; width: 100%; height: auto; display: block; margin: 24px 0; }
+  .step { color: var(--muted); margin-bottom: 8px; }
+  .cmd { display: flex; gap: 8px; align-items: stretch; background: var(--code); border-radius: 10px;
+         padding: 6px 6px 6px 16px; }
+  .cmd code { flex: 1; color: var(--code-fg); font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+              overflow-x: auto; white-space: nowrap; padding: 10px 0; }
+  button, .btn { border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-fg);
+                 font: 600 14px/1 inherit; font-family: inherit; padding: 10px 16px; cursor: pointer;
+                 text-decoration: none; display: inline-block; white-space: nowrap; }
+  .alt { margin-top: 12px; color: var(--muted); font-size: 0.95rem; }
+  .alt a { color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .card h3 { margin: 0 0 6px; font-size: 1rem; }
+  .card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+  .shots img { width: 100%; height: auto; border-radius: 8px; display: block; }
+  footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Horizon M1</h1>
+  <p class="lead">Minecraft: Java Edition 26.3 on Apple Silicon Macs, natively. Horizon is an unofficial rewrite
+    of the game in Rust; this build is tuned for 8 GB M1 Macs and comes with 16 mods, 64 resource packs and a
+    shader. No Java needed. You need your own copy of Minecraft: Java Edition.</p>
+
+  <img class="hero" src="images/day.jpg" width="1600" height="1000" alt="A sunny forest with the full look">
+
+  <h2>Install</h2>
+  <p class="step">Open Terminal (press Cmd+Space, type <b>Terminal</b>, press Return), paste this line and press Return:</p>
+  <div class="cmd">
+    <code id="line">zsh -c "$(curl -fsSL https://tm-droid.github.io/horizon-m1/i)"</code>
+    <button id="copy" type="button">Copy</button>
+  </div>
+  <p class="alt">It downloads the latest build (about 210 MB), checks it and asks two questions: the look, and
+    Microsoft account or offline. Prefer clicking?
+    <a href="https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1.zip">Download the zip</a>
+    and follow the <a href="https://github.com/tm-droid/horizon-m1#quick-start">quick start</a>.</p>
+
+  <h2>Then</h2>
+  <div class="grid">
+    <div class="card"><h3>Play</h3><p>Open <b>Horizon M1</b> from Launchpad. Microsoft players sign in once in the launcher; offline players go straight in.</p></div>
+    <div class="card"><h3>Updates</h3><p>Horizon M1 checks for a new build once a day and asks first. Your worlds and settings are kept.</p></div>
+    <div class="card"><h3>Requirements</h3><p>M1, M2, M3 or M4 Mac, macOS 12 or newer, about 3 GB free disk.</p></div>
+  </div>
+
+  <h2>Looks like this</h2>
+  <div class="shots">
+    <img src="images/sunset.jpg" loading="lazy" alt="Sunset with light rays behind the trees">
+    <img src="images/night.jpg" loading="lazy" alt="Moon and stars over the treeline at night">
+    <img src="images/hud.jpg" loading="lazy" alt="Playing with the HUD: FPS counter and minimap">
+    <img src="images/mobs.jpg" loading="lazy" alt="Animated mobs from Fresh Animations">
+  </div>
+
+  <footer>
+    <p><a href="https://github.com/tm-droid/horizon-m1#readme">Full guide, FAQ and troubleshooting</a> ·
+      <a href="https://github.com/tm-droid/horizon-m1/issues/new/choose">Get help</a> ·
+      <a href="https://github.com/tm-droid/horizon-m1/blob/main/CHANGELOG.md">Changelog</a> ·
+      <a href="https://github.com/tm-droid/horizon-m1">Source</a></p>
+    <p>Not affiliated with, endorsed by, or connected to Mojang or Microsoft. Contains no Minecraft game files.
+      Built on <a href="https://github.com/horizon-rust/horizon">Horizon</a>.</p>
+  </footer>
+</main>
+<script>
+  document.getElementById("copy").addEventListener("click", async (e) => {
+    const text = document.getElementById("line").textContent;
+    try { await navigator.clipboard.writeText(text); }
+    catch (_) {
+      const r = document.createRange(); r.selectNodeContents(document.getElementById("line"));
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand("copy");
+    }
+    e.target.textContent = "Copied";
+    setTimeout(() => { e.target.textContent = "Copy"; }, 1500);
+  });
+</script>
+</body>
+</html>

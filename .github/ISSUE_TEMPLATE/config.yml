@@ -1,5 +1,14 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Install page
+    url: https://tm-droid.github.io/horizon-m1/
+    about: The one-line install and a download link.
   - name: Install guide and FAQ
     url: https://github.com/tm-droid/horizon-m1#readme
     about: Most problems are answered in the README's FAQ and Troubleshooting.
+  - name: Questions and chat
+    url: https://github.com/tm-droid/horizon-m1/discussions
+    about: Ask anything, share screenshots and settings.
+  - name: Security problem
+    url: https://github.com/tm-droid/horizon-m1/security/advisories/new
+    about: Report it privately, not as a public issue.

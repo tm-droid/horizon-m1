@@ -1,4 +1,4 @@
-![Latest release](https://img.shields.io/github/v/release/tm-droid/horizon-m1) ![Downloads](https://img.shields.io/github/downloads/tm-droid/horizon-m1/total) ![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-black)
+![Latest release](https://img.shields.io/github/v/release/tm-droid/horizon-m1) ![Downloads](https://img.shields.io/github/downloads/tm-droid/horizon-m1/total) ![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-black) [![CI](https://github.com/tm-droid/horizon-m1/actions/workflows/ci.yml/badge.svg)](https://github.com/tm-droid/horizon-m1/actions/workflows/ci.yml)
 
 # Horizon M1: Minecraft for Apple Silicon Macs
 
@@ -11,12 +11,12 @@ You need your own Minecraft: Java Edition.
 Open Terminal (press Cmd+Space, type `Terminal`, press Return), paste this line and press Return:
 
 ```bash
-zsh -c "$(curl -fsSL https://raw.githubusercontent.com/tm-droid/horizon-m1/main/install.sh)"
+zsh -c "$(curl -fsSL https://tm-droid.github.io/horizon-m1/i)"
 ```
 
-It downloads the latest build (about 210 MB), checks it, and starts the installer. No macOS security warnings, no unzipping. Run the same line again later to update.
+It downloads the latest build (about 210 MB), checks it, and starts the installer. No macOS security warnings, no unzipping. Afterwards open **Horizon M1** from Launchpad to play. It [updates itself](#updating): when a new build is out it asks once, and your worlds and settings are kept.
 
-Prefer clicking? [Download Horizon-M1-daily7.zip](https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1-daily7.zip) and follow [Quick start](#quick-start).
+Prefer clicking? [Download Horizon-M1.zip](https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1.zip) and follow [Quick start](#quick-start). Install page: <https://tm-droid.github.io/horizon-m1/>
 
 | | |
 |---|---|
@@ -49,7 +49,7 @@ Prefer clicking? [Download Horizon-M1-daily7.zip](https://github.com/tm-droid/ho
 
 - A Mac with Apple Silicon (M1, M2, M3 or M4). Intel Macs and Windows are not supported by this build.
 - macOS 12 or newer.
-- About 2 GB of free disk space.
+- About 3 GB of free disk space.
 - Minecraft: Java Edition (for a Microsoft account, or for the offline option below).
 
 ## Quick start
@@ -57,7 +57,7 @@ Prefer clicking? [Download Horizon-M1-daily7.zip](https://github.com/tm-droid/ho
 The [one-line install](#install-with-one-line) skips steps 1 to 4 below and goes straight to step 5. To install from the zip instead:
 
 1. **Download** the zip with the link at the top of this page.
-2. **Open the zip.** Open Finder and click **Downloads** in the sidebar. Double-click `Horizon-M1-daily7.zip`. You get a folder called `Horizon M1`. (Safari may have unzipped it for you. Then the folder is already there.)
+2. **Open the zip.** Open Finder and click **Downloads** in the sidebar. Double-click `Horizon-M1.zip`. You get a folder called `Horizon M1`. (Safari may have unzipped it for you. Then the folder is already there.)
 3. **Open the installer.** Inside the folder, Control-click `Install Horizon M1.command` (or click it with two fingers). Choose **Open**, then click **Open** again in the warning. A normal double-click does not work the first time.
 4. **If macOS blocks it** (macOS 15 or newer): click **Done**. Click the Apple menu, then **System Settings**, then **Privacy & Security**. Scroll to the bottom. Click **Open Anyway** next to the installer's name. Type your Mac password if it asks. Then open the installer again (step 3).
 5. **Answer two questions.** A Terminal window opens. This is a text window, and it is normal. It asks two questions. Type the number and press Return (the Enter key).
@@ -66,22 +66,26 @@ The [one-line install](#install-with-one-line) skips steps 1 to 4 below and goes
 
    When it says **Done**:
    - **Microsoft account:** the Horizon launcher opens. Sign in, then press **Play**. The first start prepares files and takes a few minutes.
-   - **Offline:** it asks for a player name, then makes an app called "Horizon Offline". At "Start it now? (y/n)" type `y` to play.
+   - **Offline:** it asks for a player name. At "Start it now? (y/n)" type `y` to play.
+
+   Either way it makes an app called **Horizon M1** in Launchpad. Use it to play from now on.
 
 Offline needs Minecraft Java 26.3 on this Mac: either already installed in a Minecraft launcher, or downloaded by the installer after one Microsoft sign-in. See [Offline](#b-offline-no-sign-in) below.
 
 To skip the questions, put the answers in front of the one-line install. `HM1_LOOK` is the look (1, 2 or 3), `HM1_MODE` is how you play (1 or 2), and `HM1_NAME` is the offline player name:
 
 ```bash
-HM1_LOOK=1 HM1_MODE=1 zsh -c "$(curl -fsSL https://raw.githubusercontent.com/tm-droid/horizon-m1/main/install.sh)"
+HM1_LOOK=1 HM1_MODE=1 zsh -c "$(curl -fsSL https://tm-droid.github.io/horizon-m1/i)"
 ```
 
 ## Playing next time
 
-You do not need to run the installer again.
+Open **Horizon M1** from Launchpad (or Finder > Go > Home > Applications). You do not need to run the installer again.
 
-- **Microsoft account:** open **Horizon** from Launchpad or the Applications folder, then press **Play**.
-- **Offline:** open **Horizon Offline** from Launchpad. It shows no window of its own. The game window appears after a few seconds. If nothing appears, see [Troubleshooting](#troubleshooting).
+- **Microsoft account:** it opens the Horizon launcher. Press **Play**.
+- **Offline:** it starts the game as your player name. It shows no window of its own. The game window appears after a few seconds. If nothing appears, see [Troubleshooting](#troubleshooting).
+
+Once a day it checks for a new Horizon M1 build first. See [Updating](#updating).
 
 ## Install details
 
@@ -132,7 +136,7 @@ Horizon builds its textures and sounds from Minecraft: Java Edition 26.3. The in
 1. Type `2` in the installer.
 2. At "Pick a player name (3-16 letters, numbers or _):" type a name of 3 to 16 letters, numbers or `_`.
 3. The installer prepares the game from Minecraft 26.3 and prints the folder it used. If it finds none, type `d` to download it (see above). You can also drag a game folder (the one holding `versions` and `assets`) into the Terminal window and press Return.
-4. It creates the "Horizon Offline" app. It shows up in Launchpad. The file is in your home folder's Applications folder: in Finder choose **Go > Home**, then open **Applications**. (The path is `~/Applications/Horizon Offline.app`.)
+4. It creates the "Horizon M1" app. It shows up in Launchpad. The file is in your home folder's Applications folder: in Finder choose **Go > Home**, then open **Applications**. (The path is `~/Applications/Horizon M1.app`.)
 5. It asks "Start it now? (y/n)". Type `y` to play.
 
 ### Still blocked by macOS?
@@ -227,7 +231,7 @@ To get a link you can send to someone for help, run:
 /Applications/Horizon.app/Contents/MacOS/horizon-launcher share-log
 ```
 
-**Horizon Offline does nothing when I open it.**
+**Horizon M1 does nothing when I open it (offline).**
 It shows no window of its own, and the game window can take a few seconds. If nothing appears, check `~/Library/Application Support/horizon/logs/play-offline.out`.
 
 **Low FPS.**
@@ -246,7 +250,7 @@ Or double-click `Uninstall Horizon M1.command` in the `Horizon M1` folder from t
 To do it by hand, delete these:
 
 - `/Applications/Horizon.app`
-- `~/Applications/Horizon Offline.app`
+- `~/Applications/Horizon M1.app` (older installs: `Horizon Offline.app`)
 - `~/Library/Application Support/horizon-launcher`
 - `~/Library/Application Support/horizon`
 
@@ -346,12 +350,18 @@ again: it selects the M1 build again and keeps your worlds.
 
 ### Updating
 
-- The launcher may offer newer Horizon releases. The installer turned off auto-install so the M1 build stays selected. Only install a newer release if you want to leave the M1 build.
-- To go back after trying another version, pick the M1 build in the launcher under Settings > selected version, or run:
+- **Automatic:** once a day, opening **Horizon M1** checks GitHub for a new build. If there is one, it asks: **Update** opens a Terminal window that installs it with your earlier answers (no questions) and then starts the game; **Later** plays now and asks again tomorrow; **Skip this version** waits for the build after it. No internet: it just starts the game.
+- **By hand:** run the [one-line install](#install-with-one-line) again, or download the new zip and run its installer. To answer the questions again (another look, or switch between Microsoft and offline), put `HM1_ASK=1` in front of the line.
+- **What carries over:** worlds, packs, shaders, settings, mod settings and your own mods. The game files prepared from Minecraft 26.3 carry over too when the new build prepares them the same way; if not, the installer asks for 26.3 once more.
+- **Disk space:** each build is about 1 GB. An update removes older M1 builds and keeps the one before, so you can go back.
+- **Going back:** pick the earlier build in the launcher under Settings > selected version, or run `/Applications/Horizon.app/Contents/MacOS/horizon-launcher settings selected-version <build>` (the builds are the folders in `~/Library/Application Support/horizon-launcher/versions`).
+- **Turn off the update check:**
   ```sh
-  /Applications/Horizon.app/Contents/MacOS/horizon-launcher settings selected-version native-fdc87ae-m1-daily7-fix3-960d547ba1bd
+  touch ~/Library/Application\ Support/horizon-launcher/horizon-m1/no-updates
   ```
-- For a new M1 build, run the [one-line install](#install-with-one-line) again (or download the new zip and run its installer). Worlds, packs, shaders, settings, mod settings and your own mods carry over. The built-in mods come with every M1 build. The game files prepared from Minecraft 26.3 carry over too when the new build prepares them the same way; if not, the installer asks for 26.3 once more.
+  Delete that file to turn it back on.
+- The launcher itself may offer newer Horizon releases. The installer turned off their auto-install so the M1 build stays selected. Only install one if you want to leave the M1 build.
+- What changed in each build: [CHANGELOG.md](CHANGELOG.md).
 
 ### Where things live
 
@@ -362,7 +372,7 @@ again: it selects the M1 build again and keeps your worlds.
 
 ### Check your download
 
-The one-line install checks the download by itself. For the zip: the release page <https://github.com/tm-droid/horizon-m1/releases/latest> lists the SHA-256 checksum of the zip. To check your download, run `shasum -a 256 ~/Downloads/Horizon-M1-daily7.zip` in Terminal and compare the result with the release page.
+The one-line install checks the download by itself. For the zip: the release page <https://github.com/tm-droid/horizon-m1/releases/latest> lists the SHA-256 checksum of the zip. To check your download, run `shasum -a 256 ~/Downloads/Horizon-M1.zip` in Terminal and compare the result with the release page.
 
 ## Credits and licenses
 
@@ -380,7 +390,8 @@ Tuning and mod work for Horizon (native Rust/Metal Minecraft 26.3 client) on a M
 - `outputs/bench-2026-11-10/` bench harness (`bench.py`), gallery test (`gallery.py`), run results (`runs/*.json`).
 - `tools/`, `tests/`: converter and test tools. `docs/`: research and reports.
 - `config/`: snapshot of the live game and launcher settings. `tools/config-sync.sh snapshot` copies live settings in (then commit); `tools/config-sync.sh restore` puts them back (game and launcher closed). Account files are not tracked.
-- `dist/` holds the release installer. `dist/package.sh` builds the zip from the live build.
+- `dist/` holds the release installer. `dist/package.sh` builds `Horizon-M1.zip` and the update manifest `horizon-m1.json` from the live build; `dist/release.sh [--dry-run]` publishes them as a new release `m1-<build>` with notes from `dist/RELEASE.md` and `CHANGELOG.md`. `dist/extras/start.sh` is what the Horizon M1 app runs (update check, then start).
+- `site/` is the install page; `.github/workflows/pages.yml` publishes it with `install.sh` as the short link `/i`. `.github/workflows/ci.yml` checks script syntax, personal files and the converter tests.
 
 Builds, source clones, screenshots and pack zips stay local (see `.gitignore`).
 

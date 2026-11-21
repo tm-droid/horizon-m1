@@ -1,11 +1,13 @@
 #!/bin/zsh
 # Horizon M1 installer. Double-click it (first time: right-click > Open, see the README).
 # Installs the Horizon launcher and the M1-tuned Horizon build, then sets up either a
-# Microsoft account (normal) or an offline player (no sign-in).
+# Microsoft account (normal) or an offline player (no sign-in). Running it again updates: it keeps the
+# answers given last time (HM1_ASK=1 asks again). HM1_START=1 starts the game at the end.
 set -eu
 
 HERE="${0:A:h}"
 TAG="__TAG__"
+SHORT="__SHORT__"                # TAG without the commit and hash: what players see (daily7-fix3)
 BASE="__BASE__"                  # the Horizon release the M1 build is patched on; prepare needs it
 LDIR="$HOME/Library/Application Support/horizon-launcher"
 GDIR="$HOME/Library/Application Support/horizon"
@@ -19,12 +21,27 @@ die() { print -P "%F{red}%BError:%b%f $*" >&2; print "$HELP"; print "Press Retur
 ask() { print -n "$1 "; read -r REPLY || { print "\nInput closed."; exit 1; }; }
 
 clear 2>/dev/null || true
-print -P "%BHorizon M1 installer%b  (build $TAG)\n"
+print -P "%BHorizon M1 installer%b  (build $SHORT)\n"
 
 [[ "$(uname -m)" == arm64 ]] || die "This build is for Apple Silicon Macs (M1/M2/M3/M4) only."
 [[ -d "$HERE/Horizon.app" && -d "$HERE/game/$TAG" && -d "$HERE/game/$BASE" ]] || die "Run this from inside the unzipped \"Horizon M1\" folder."
 pgrep -qx horizon-client && die "Horizon is running. Quit the game first."
 pgrep -qf 'MacOS/horizon-launcher( -psn[^ ]*)?$' && die "The Horizon launcher is open. Quit it (Cmd+Q) first."
+
+# Answers from the last run. An update with all of them asks nothing.
+PREV=$(cat "$M1DIR/version.txt" 2>/dev/null || true)
+SAVED_LOOK=$(cat "$M1DIR/look.txt" 2>/dev/null || true)
+SAVED_MODE=$(cat "$M1DIR/mode.txt" 2>/dev/null || true)
+SAVED_NAME=$(cat "$M1DIR/player.txt" 2>/dev/null || true)
+UPDATE=0
+if [[ -z "${HM1_ASK:-}" && "$SAVED_LOOK" == [123] && ( "$SAVED_MODE" == microsoft || ( "$SAVED_MODE" == offline && -n "$SAVED_NAME" ) ) ]]; then
+  UPDATE=1
+  : ${HM1_LOOK:=$SAVED_LOOK}
+  [[ "$SAVED_MODE" == offline ]] && { : ${HM1_MODE:=2}; : ${HM1_NAME:=$SAVED_NAME}; } || : ${HM1_MODE:=1}
+  WHO="Microsoft account"; [[ "$HM1_MODE" == 2 ]] && WHO="offline as ${HM1_NAME:-}"
+  print "Updating${PREV:+ from ${${PREV##*-m1-}%-*}}. Keeping your choices: look $HM1_LOOK, $WHO."
+  print "(To change them, run the installer with HM1_ASK=1.)\n"
+fi
 
 say "Clearing the download quarantine on this folder"
 xattr -dr com.apple.quarantine "$HERE" 2>/dev/null || true
@@ -71,6 +88,13 @@ fi
 "$CLI" settings install-new-versions off >/dev/null
 "$CLI" settings prune-old-versions off >/dev/null
 say "Selected $TAG in the launcher"
+# Old M1 builds this installer put in (they carry the .installed marker) take about 1 GB each. Keep this one,
+# its base release and the one it replaces (a fallback: Settings > selected version in the launcher).
+for d in "$LDIR/versions/"*-m1-*(N/); do
+  t="${d:t}"
+  [[ "$t" == "$TAG" || "$t" == "$BASE" || "$t" == "$PREV" || ! -e "$d/.installed" ]] && continue
+  rm -rf "$d" && say "Removed the old build ${${t##*-m1-}%-*}"
+done
 
 # 4. The author's settings tuned for an 8 GB M1: video, controls, mod keys and mod configs.
 #    Each file is added only if the player has none yet, so their own settings are never replaced.
@@ -89,11 +113,25 @@ if [[ ! -e "$MM/settings.ini" ]]; then
   mkdir -p "$MM"; cp "$HERE/extras/minimap/settings.ini" "$MM/settings.ini"
 fi
 
-# 5. Offline helper (always installed, so you can switch later)
+# 5. The Horizon M1 app's script (update check, then start) and the offline helper, always installed so
+#    the player can switch later.
 mkdir -p "$M1DIR"
-cp "$HERE/extras/play-offline.sh" "$M1DIR/play-offline.sh"
-chmod +x "$M1DIR/play-offline.sh"
+for f in start.sh play-offline.sh; do
+  cp "$HERE/extras/$f" "$M1DIR/$f"; chmod +x "$M1DIR/$f"
+done
 print "$TAG" > "$M1DIR/version.txt"
+rm -f "$M1DIR/skipped.txt" "$M1DIR/update.command"
+
+# "Horizon M1" in Launchpad (~/Applications), for both Microsoft and offline players. Replaces the older
+# "Horizon Offline" app.
+make_app() {
+  OAPP="$HOME/Applications/Horizon M1.app"
+  mkdir -p "$HOME/Applications"; rm -rf "$OAPP" "$HOME/Applications/Horizon Offline.app"
+  osacompile -o "$OAPP" -e "do shell script quoted form of \"$M1DIR/start.sh\"" 2>/dev/null \
+    || die "Could not make the Horizon M1 app."
+  cp "$APP/Contents/Resources/horizon.icns" "$OAPP/Contents/Resources/applet.icns" 2>/dev/null || true
+  touch "$OAPP"
+}
 
 # 6. The full look: resource packs + shader. Never overwrites pack files; keeps the player's own packs enabled.
 print ""
@@ -104,6 +142,8 @@ print "  3) Plain       no packs, no shader (fastest)"
 REPLY="${HM1_LOOK:-}"
 [[ -n "$REPLY" ]] || ask "Type 1, 2 or 3 and press Return [1]:"
 [[ -z "$REPLY" ]] && REPLY=1
+[[ "$REPLY" == [123] ]] || REPLY=3
+print "$REPLY" > "$M1DIR/look.txt"
 if [[ "$REPLY" == [12] ]]; then
   LOOK="$REPLY"
   mkdir -p "$GDIR/resourcepacks" "$GDIR/shaderpacks"
@@ -153,6 +193,7 @@ case "$REPLY" in
       ask "Pick a player name (3-16 letters, numbers or _):"; NAME="$REPLY"
     done
     print "$NAME" > "$M1DIR/player.txt"
+    print offline > "$M1DIR/mode.txt"
 
     # Any launcher folder on this Mac that holds Minecraft 26.3 (official launcher, Prism and its forks,
     # MultiMC, Modrinth App, ATLauncher, GDLauncher...), tried one by one.
@@ -248,21 +289,33 @@ rm -f $3.partial; print -u2 "   Failed: $2"; exit 1'
       fi
     done
 
-    say "Making the 'Horizon Offline' app (you will find it in Launchpad)"
-    OAPP="$HOME/Applications/Horizon Offline.app"
-    mkdir -p "$HOME/Applications"; rm -rf "$OAPP"
-    osacompile -o "$OAPP" -e "do shell script quoted form of \"$M1DIR/play-offline.sh\"" 2>/dev/null
-    cp "$APP/Contents/Resources/"*.icns "$OAPP/Contents/Resources/applet.icns" 2>/dev/null || true
-    touch "$OAPP"
+    say "Making the 'Horizon M1' app (you will find it in Launchpad)"
+    make_app
     print ""
-    print -P "%F{green}%BDone.%b%f Next time, open %BHorizon Offline%b from Launchpad to play as $NAME"
+    print -P "%F{green}%BDone.%b%f Next time, open %BHorizon M1%b from Launchpad to play as $NAME"
     print "  (or Finder > Go > Home > Applications). It shows no window of its own: the game opens after a few seconds."
-    ask "Start it now? (y/n)"
-    [[ "$REPLY" == [yY]* ]] && open "$OAPP"
+    print "  It checks for new Horizon M1 builds once a day and asks before updating."
+    if [[ -n "${HM1_START:-}" ]]; then
+      open "$OAPP"
+    else
+      ask "Start it now? (y/n)"
+      [[ "$REPLY" == [yY]* ]] && open "$OAPP"
+    fi
     ;;
   *)
+    print microsoft > "$M1DIR/mode.txt"
+    say "Making the 'Horizon M1' app (you will find it in Launchpad)"
+    make_app
     print ""
-    print -P "%F{green}%BDone.%b%f The Horizon launcher opens now:"
+    if (( UPDATE )); then
+      print -P "%F{green}%BUpdated to $SHORT.%b%f The Horizon launcher opens now: press Play."
+      print "  Next time, open Horizon M1 from Launchpad."
+      open "$APP"
+      print "You can close this window."
+      exit 0
+    fi
+    print -P "%F{green}%BDone.%b%f Next time, open %BHorizon M1%b from Launchpad: it checks for updates, then opens"
+    print "  the Horizon launcher. The launcher opens now:"
     print "  1. Sign in with the Microsoft account that owns Minecraft: Java Edition."
     print "  2. Press Play. The first start prepares the game (a few minutes), later ones are fast."
     print "  Do not press Install on a newer release unless you want to leave the M1 build."

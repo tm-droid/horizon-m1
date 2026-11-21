@@ -1,0 +1,65 @@
+# Checks on every push and pull request: the scripts players run still parse, the release templates are
+# intact, no personal files slipped into this public repo, and the converter tests pass.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    # macOS: the installer is zsh + JavaScript for Automation, both only complete there.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: zsh syntax
+        run: |
+          for f in install.sh dist/*.command dist/*.sh dist/extras/*.sh dist/fixpack/build.sh tools/*.sh; do
+            [ -f "$f" ] || continue
+            zsh -n "$f" && echo "ok  $f"
+          done
+      - name: Installer template placeholders
+        run: |
+          for p in __TAG__ __BASE__ __SHORT__; do grep -q "\"$p\"" dist/install.command || { echo "missing $p"; exit 1; }; done
+          for p in __SHORT__ __TAG__ __SHA__ __CHANGES__; do grep -q "$p" dist/RELEASE.md || { echo "RELEASE.md missing $p"; exit 1; }; done
+      - name: Update-check manifest parses (JavaScript for Automation)
+        run: |
+          out=$(osascript -l JavaScript -e 'function run(a) { const m = JSON.parse(a[0]); return m.tag + " " + m.short; }' \
+            '{"tag": "native-x-m1-daily9-abc", "short": "daily9", "base": "b", "sha256": "0", "size": 1}')
+          [ "$out" = "native-x-m1-daily9-abc daily9" ] || { echo "got: $out"; exit 1; }
+
+  privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No account, server, log or token files
+        run: |
+          bad=$(git ls-files | grep -E '(^|/)(accounts\.json|servers\.dat|secrets)|\.log$|\.token$' || true)
+          [ -z "$bad" ] || { echo "Personal files tracked:"; echo "$bad"; exit 1; }
+      - name: No personal email addresses
+        run: |
+          bad=$(git grep -I -l -E '[A-Za-z0-9._%+-]+@(gmail|outlook|hotmail|icloud|yahoo|proton)\.' || true)
+          [ -z "$bad" ] || { echo "Email address in:"; echo "$bad"; exit 1; }
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      # test_horizon_cem_alias_bundle, _cem_binding_patch, _lantern_compat and _zoom_pilot need local build
+      # outputs that are not in git; run them on the build Mac.
+      - name: Converter tests
+        working-directory: tests
+        run: >
+          python -m unittest -v
+          test_horizon_convert test_horizon_converter_carry test_horizon_converter_cem
+          test_horizon_converter_mods test_horizon_converter_packs test_horizon_converter_prune
+          test_horizon_converter_review test_horizon_converter_settings test_horizon_fresh_flight
+          test_horizon_prepare

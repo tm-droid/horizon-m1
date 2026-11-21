@@ -20,13 +20,14 @@ if pgrep -qx horizon-client || pgrep -qf 'MacOS/horizon-launcher( -psn[^ ]*)?$';
   print "Quit Horizon (the game and the launcher) first, then run this again."; ask "Press Return to close."; exit 1
 fi
 print "This moves to the Trash:"
-print "  /Applications/Horizon.app, ~/Applications/Horizon Offline.app,"
+print "  /Applications/Horizon.app, ~/Applications/Horizon M1.app,"
 print "  and the launcher folder with the installed builds."
 ask "Continue? (y/n)"
 [[ "$REPLY" == [yY]* ]] || { print "Nothing changed."; exit 0; }
 
 trash "/Applications/Horizon.app"
-trash "$HOME/Applications/Horizon Offline.app"
+trash "$HOME/Applications/Horizon M1.app"
+trash "$HOME/Applications/Horizon Offline.app"   # made by older installers
 trash "$LDIR"
 
 print ""

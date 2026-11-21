@@ -18,12 +18,13 @@ them on your Mac from your own copy.
    - how you play: 1 Microsoft account (normal), then sign in and press Play
      in the Horizon launcher that opens;
      or 2 Offline (no sign-in): pick a player name, then play with
-     "Horizon Offline" from Launchpad. Offline needs Minecraft Java 26.3:
+     "Horizon M1" from Launchpad. Offline needs Minecraft Java 26.3:
      the installer finds it if it was launched once in any Minecraft
      launcher, or type d to download it from Mojang (with or without
      a Microsoft account).
-3. Next time: open Horizon (Microsoft) or Horizon Offline from Launchpad.
-   No need to run the installer again.
+3. Next time: open "Horizon M1" from Launchpad (Microsoft or offline).
+   No need to run the installer again. When a new build is out, Horizon M1
+   asks once whether to update; your worlds and settings are kept.
 4. Your worlds live in ~/Library/Application Support/horizon
 
 To remove it: Control-click "Uninstall Horizon M1.command" > Open. It moves

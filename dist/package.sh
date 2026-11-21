@@ -1,18 +1,19 @@
 #!/bin/zsh
 # Build the friend-ready release zip from the live launcher + selected build. Never uploads.
 # Usage: dist/package.sh [TAG]   (default: the launcher's selected version)
-# Output: dist/out/Horizon-M1-<short>.zip and its .sha256
+# Output: dist/out/Horizon-M1.zip, its .sha256 and horizon-m1.json (the manifest start.sh checks for updates).
+# Asset names never change, so releases/latest/download/<name> links always work.
 set -eu
 D="${0:A:h}"
 L="$HOME/Library/Application Support/horizon-launcher"
 TAG="${1:-$(/usr/bin/python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["selected"])' "$L/settings.json")}"
 V="$L/versions/$TAG"
-SHORT="${${TAG##*-m1-}%%-*}"            # native-fdc87ae-m1-daily7-73de... -> daily7
-OUT="$D/out"; ST="$OUT/stage/Horizon M1"; ZIP="$OUT/Horizon-M1-$SHORT.zip"
+SHORT="${${TAG##*-m1-}%-*}"             # native-fdc87ae-m1-daily7-fix3-960d... -> daily7-fix3
+OUT="$D/out"; ST="$OUT/stage/Horizon M1"; ZIP="$OUT/Horizon-M1.zip"; MAN="$OUT/horizon-m1.json"
 [[ -x "$V/horizon-client" ]] || { echo "no build at $V" >&2; exit 1; }
 [[ -d "$D/LICENSES" ]] || { echo "dist/LICENSES missing" >&2; exit 1; }
 
-rm -rf "$OUT/stage" "$ZIP" "$ZIP.sha256"; mkdir -p "$ST/game"
+rm -rf "$OUT/stage" "$ZIP" "$ZIP.sha256" "$MAN"; mkdir -p "$ST/game"
 ditto --noextattr --noqtn /Applications/Horizon.app "$ST/Horizon.app"
 # The base release and the build, without .local/ (Mojang assets prepared on this Mac: never shipped) and without install markers.
 BASE=$(/usr/bin/python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["base"])' "$V/native-mods.json")
@@ -20,7 +21,7 @@ BASE=$(/usr/bin/python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["
 for t in "$BASE" "$TAG"; do
   rsync -a --exclude '/.local' --exclude '/.installed' --exclude '.DS_Store' "$L/versions/$t/" "$ST/game/$t/"
 done
-sed -e "s/__TAG__/$TAG/" -e "s/__BASE__/$BASE/" "$D/install.command" > "$ST/Install Horizon M1.command"
+sed -e "s/__TAG__/$TAG/" -e "s/__BASE__/$BASE/" -e "s/__SHORT__/$SHORT/" "$D/install.command" > "$ST/Install Horizon M1.command"
 chmod +x "$ST/Install Horizon M1.command"
 cp "$D/uninstall.command" "$ST/Uninstall Horizon M1.command"; chmod +x "$ST/Uninstall Horizon M1.command"
 ditto "$D/extras" "$ST/extras"
@@ -127,4 +128,8 @@ PY2
 
 (cd "$OUT/stage" && ditto -c -k --keepParent "Horizon M1" "$ZIP")
 (cd "$OUT" && shasum -a 256 "${ZIP:t}" | tee "${ZIP:t}.sha256")
+SHA=$(awk '{print $1}' "$ZIP.sha256")
+printf '{"tag": "%s", "short": "%s", "base": "%s", "sha256": "%s", "size": %s}\n' \
+  "$TAG" "$SHORT" "$BASE" "$SHA" "$(stat -f %z "$ZIP")" > "$MAN"
+cat "$MAN"
 du -h "$ZIP"

@@ -1,0 +1,74 @@
+name: Help, it doesn't work
+description: Installer, update or game problem on your Mac
+title: "[Help] "
+labels: [help]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sorry it broke. Most problems are answered in the [FAQ](https://github.com/tm-droid/horizon-m1#faq) and
+        [Troubleshooting](https://github.com/tm-droid/horizon-m1#troubleshooting). Never paste passwords,
+        emails or account tokens here: this page is public.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you clicked or typed, and what you saw. Copy any red error text from the Terminal window.
+    validations:
+      required: true
+  - type: dropdown
+    id: step
+    attributes:
+      label: When did it happen?
+      options:
+        - Installing for the first time
+        - Updating
+        - Starting the game
+        - While playing
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How do you play?
+      options:
+        - Microsoft account
+        - Offline
+        - Not chosen yet
+    validations:
+      required: true
+  - type: dropdown
+    id: look
+    attributes:
+      label: Which look did you pick?
+      options:
+        - 1 Full look
+        - 2 Fast look
+        - 3 Plain
+        - Not chosen yet
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Your Mac's chip
+      description: Apple menu > About This Mac.
+      options: [M1, M2, M3, M4, Other]
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "e.g. 15.3"
+  - type: input
+    id: build
+    attributes:
+      label: Horizon M1 build
+      description: The installer prints it at the top, e.g. daily7-fix3.
+  - type: input
+    id: log
+    attributes:
+      label: Log link
+      description: |
+        Run this in Terminal and paste the link it prints:
+        `/Applications/Horizon.app/Contents/MacOS/horizon-launcher share-log`
