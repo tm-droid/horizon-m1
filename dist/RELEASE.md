@@ -39,4 +39,4 @@ Mob fixes in this build: mooshroom mushrooms sit on the back, slimes have a see-
 
 Credits and licenses are in the `LICENSES` folder of the zip. Unofficial; not affiliated with Mojang Studios or Microsoft. No Minecraft assets are included.
 
-SHA-256: f08b453d83f03e6ee715f23f6cfea433ebdbd0b275fd96bdbbeb82c924154a1e
+SHA-256: 29e163f0157f5957a1159a153d50b9fe375eab78ed41543cd12b5b1cefca3571
