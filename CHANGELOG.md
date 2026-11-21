@@ -3,6 +3,17 @@
 Each section is one Horizon M1 build. `dist/release.sh` copies the section of the build it publishes into the
 release notes, so add the section before releasing.
 
+## daily7-fix5
+
+Same game build as daily7-fix4; the installer, the uninstaller and the bundled launcher change.
+
+- Play always starts the Horizon M1 build. The installer now pins the Horizon instance to it, so a launcher
+  that was already set to another Horizon version can no longer start that one instead (no mods, broken shader).
+  It also refuses to run while the launcher window is open, and checks the result before it finishes.
+- The uninstaller removes only what Horizon M1 added. If you had Horizon before, your launcher, its other
+  versions, your instance and settings, packs and shader stay or are put back as they were.
+- Bundles the Horizon launcher 0.2.97 (was 0.2.86).
+
 ## daily7-fix4
 
 Same game build as daily7-fix3; only the look and the installer change.

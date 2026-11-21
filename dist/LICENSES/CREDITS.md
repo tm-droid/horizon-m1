@@ -28,7 +28,7 @@ Jade is licensed CC BY-NC-SA 4.0: it is credited here, used noncommercially, and
 
 ## Horizon
 
-The game client is [Horizon](https://github.com/horizon-rust/horizon) by Ludovic Marie and the Horizon contributors, licensed under the GNU LGPL v3.0 (`Horizon-LICENSE.txt`, which builds on the GNU GPL v3.0 in `GPL-3.0.txt`). This build is modified. The release also ships the official Horizon launcher app (Horizon.app 0.2.86) from [horizon-rust/horizon releases](https://github.com/horizon-rust/horizon/releases), unmodified.
+The game client is [Horizon](https://github.com/horizon-rust/horizon) by Ludovic Marie and the Horizon contributors, licensed under the GNU LGPL v3.0 (`Horizon-LICENSE.txt`, which builds on the GNU GPL v3.0 in `GPL-3.0.txt`). This build is modified. The release also ships the official Horizon launcher app (Horizon.app 0.2.97) from [horizon-rust/horizon releases](https://github.com/horizon-rust/horizon/releases), unmodified.
 
 ## Source for this build (LGPL)
 
