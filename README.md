@@ -127,7 +127,7 @@ Pick this if you want to play without signing in. Offline mode works for singlep
 Horizon builds its textures and sounds from Minecraft: Java Edition 26.3. The installer gets it one of two ways:
 
 - **Already installed:** if 26.3 was launched once in any Minecraft launcher on this Mac (official launcher, Prism, Modrinth App, MultiMC, ATLauncher, GDLauncher and others), the installer finds it by itself.
-- **Not installed:** type `d` when the installer asks. You sign in once in your browser with the Microsoft account that owns Minecraft, and the installer downloads 26.3 from Mojang. You don't need the Minecraft Launcher, and you can still play offline afterwards.
+- **Not installed:** type `d` when the installer asks, and the installer downloads 26.3 from Mojang (about 560 MB). It asks whether you have a Microsoft account that owns Minecraft: if yes, you sign in once in your browser; if no, it downloads without signing in. You don't need the Minecraft Launcher, and you can still play offline afterwards.
 
 1. Type `2` in the installer.
 2. At "Pick a player name (3-16 letters, numbers or _):" type a name of 3 to 16 letters, numbers or `_`.
@@ -215,7 +215,7 @@ Follow the steps in [Quick start](#quick-start), steps 3 and 4: Control-click > 
 Quit it with Cmd+Q, then run the installer again.
 
 **The installer says it "could not find Minecraft 26.3".**
-Type `d` to sign in once and download it from Mojang. Or launch 26.3 once in your Minecraft launcher and press Return to try again. See [B. Offline](#b-offline-no-sign-in).
+Type `d` to download it from Mojang (with or without a Microsoft account). Or launch 26.3 once in your Minecraft launcher and press Return to try again. See [B. Offline](#b-offline-no-sign-in).
 
 **The game crashes or won't start.**
 Print the logs with:

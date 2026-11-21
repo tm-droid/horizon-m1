@@ -169,20 +169,79 @@ case "$REPLY" in
       return 1
     }
 
+    # Minecraft's own files from Mojang's public servers, no sign-in: the version JSON this build
+    # pins (by its SHA-1), the client jar, the macOS libraries, the asset index and every asset,
+    # each checked against the SHA-1 Mojang lists. They go where the launcher keeps its own
+    # download ($LDIR/minecraft, the official launcher's layout), so `prepare` finds them there;
+    # prepare fetches Java 25 and the server jar itself. Files already whole are kept, so a
+    # stopped download goes on where it stopped. JSON is read with JavaScript for Automation:
+    # macOS 12 has no jq.
+    MOJANG_JS=$(cat <<'EOF'
+ObjC.import('Foundation');
+function run(a) {
+  var d = JSON.parse($.NSString.stringWithContentsOfFileEncodingError(a[1], $.NSUTF8StringEncoding, null).js);
+  var out = [], add = function (sha1, url, path) { out.push(sha1 + ' ' + url + ' ' + path); };
+  if (a[0] == 'lock') return d.minecraft.version + ' ' + d.minecraft.manifest_sha1;
+  if (a[0] == 'game') {
+    var c = d.downloads.client, i = d.assetIndex;
+    add(c.sha1, c.url, 'versions/' + d.id + '/' + d.id + '.jar');
+    d.libraries.forEach(function (l) {
+      var ok = !l.rules, x = l.downloads && l.downloads.artifact;
+      (l.rules || []).forEach(function (r) { if (!r.os || r.os.name == 'osx') ok = r.action == 'allow'; });
+      if (ok && x) add(x.sha1, x.url, 'libraries/' + x.path);
+    });
+    add(i.sha1, i.url, 'assets/indexes/' + i.id + '.json');
+  } else {
+    var seen = {};
+    for (var k in d.objects) {
+      var h = d.objects[k].hash;
+      if (!seen[h]) { seen[h] = 1; add(h, 'https://resources.download.minecraft.net/' + h.slice(0, 2) + '/' + h, 'assets/objects/' + h.slice(0, 2) + '/' + h); }
+    }
+  }
+  return out.join('\n');
+}
+EOF
+)
+    # One file: $1 SHA-1, $2 URL, $3 path (relative, no spaces). Kept when already whole.
+    GET1='[[ -f $3 && "$(shasum -a 1 <$3)" == $1* ]] && exit 0
+mkdir -p ${3:h} && curl -fsSL --retry 2 -o $3.partial $2 && [[ "$(shasum -a 1 <$3.partial)" == $1* ]] && mv $3.partial $3 && exit 0
+rm -f $3.partial; print -u2 "   Failed: $2"; exit 1'
+    mojang_json() { osascript -l JavaScript -e "$MOJANG_JS" "$@"; }
+    mojang_get() { (cd "$LDIR/minecraft" && xargs -P 8 -n 3 /bin/zsh -c "$GET1" _); }
+    mojang_download() {
+      local pin v sha list
+      pin=$(mojang_json lock "$LDIR/versions/$TAG/research-lock.json") || return 1
+      v=${pin% *}; sha=${pin#* }
+      mkdir -p "$LDIR/minecraft" || return 1
+      print "   Downloading Minecraft $v from Mojang (about 560 MB)"
+      print "$sha https://piston-meta.mojang.com/v1/packages/$sha/$v.json versions/$v/$v.json" | mojang_get || return 1
+      list=$(mojang_json game "$LDIR/minecraft/versions/$v/$v.json") || return 1
+      print "   The game and $(( ${#${(f)list}} - 2 )) libraries"
+      print -r -- "$list" | mojang_get || return 1
+      list=$(mojang_json objects "$LDIR/minecraft/${${(f)list}[-1]##* }") || return 1
+      print "   Textures and sounds: ${#${(f)list}} files"
+      print -r -- "$list" | mojang_get
+    }
+
     say "Preparing the game's textures and sounds from your Minecraft: Java Edition install"
     print "   (needs Minecraft Java 26.3 installed and launched once, from the official launcher,"
     print "    Prism, Modrinth App, MultiMC, ATLauncher or GDLauncher)"
     until [[ -d "$LDIR/versions/$TAG/.local/horizon-client/26.3" ]] || "$CLI" prepare --version "$TAG" || auto_prepare; do
       print ""
       print "Horizon could not find Minecraft Java 26.3. Pick one:"
-      print "  d       download it from Mojang (sign in once with a Microsoft account that owns Minecraft)"
+      print "  d       download it from Mojang (about 560 MB)"
       print "  Return  try again, after launching 26.3 once in your Minecraft launcher"
       print "  folder  drag your launcher's game folder (the one holding 'versions' and 'assets') into this window"
       ask "Type d, press Return, drag a folder, or type q to quit:"
       [[ "$REPLY" == q ]] && die "Not prepared. Run this installer again when Minecraft 26.3 is installed."
       if [[ "$REPLY" == d ]]; then
-        print "A browser page opens: type the code shown here and sign in."
-        "$CLI" account sign-in && "$CLI" prepare --download --version "$TAG" || print "The download did not finish."
+        ask "Do you have a Microsoft account that owns Minecraft: Java Edition? (y/n)"
+        if [[ "$REPLY" == [yY]* ]]; then
+          print "A browser page opens: type the code shown here and sign in."
+          "$CLI" account sign-in && "$CLI" prepare --download --version "$TAG" || print "The download did not finish."
+        else
+          mojang_download || print "The download did not finish. Type d to go on where it stopped."
+        fi
       elif [[ -n "$REPLY" ]]; then
         DIR="${${REPLY%% }//\\ / }"; DIR="${DIR//\'/}"
         "$CLI" settings minecraft-dir "$DIR" >/dev/null || print "That folder was refused."
