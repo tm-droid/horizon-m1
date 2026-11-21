@@ -21,7 +21,8 @@ trash() {
 
 clear 2>/dev/null || true
 print -P "%BHorizon M1 uninstaller%b\n"
-if pgrep -qx horizon-client || pgrep -qx horizon-launcher; then
+# Any launcher process but `horizon-launcher mcp` (the server agents use), whatever its arguments.
+if pgrep -qx horizon-client || pgrep -lf 'MacOS/horizon-launcher' | grep -qv 'horizon-launcher mcp$'; then
   print "Quit Horizon (the game and the launcher) first, then run this again."; ask "Press Return to close."; exit 1
 fi
 if [[ ! -d "$M1DIR" && ! -d "$HOME/Applications/Horizon M1.app" && ! -d "$HOME/Applications/Horizon Offline.app" ]]; then

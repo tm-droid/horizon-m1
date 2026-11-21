@@ -26,9 +26,9 @@ print -P "%BHorizon M1 installer%b  (build $SHORT)\n"
 [[ "$(uname -m)" == arm64 ]] || die "This build is for Apple Silicon Macs (M1/M2/M3/M4) only."
 [[ -d "$HERE/Horizon.app" && -d "$HERE/game/$TAG" && -d "$HERE/game/$BASE" ]] || die "Run this from inside the unzipped \"Horizon M1\" folder."
 pgrep -qx horizon-client && die "Horizon is running. Quit the game first."
-# By process name, whatever its arguments: an open launcher window keeps its settings in memory and writes
-# them back later, undoing the version picked below.
-pgrep -qx horizon-launcher && die "The Horizon launcher is open. Quit it (Cmd+Q) first."
+# Any launcher process whatever its arguments: an open window keeps its settings in memory and writes them
+# back later, undoing the version picked below. Not `horizon-launcher mcp`, the server agents use: it keeps none.
+pgrep -lf 'MacOS/horizon-launcher' | grep -qv 'horizon-launcher mcp$' && die "The Horizon launcher is open. Quit it (Cmd+Q) first."
 
 # The launcher's instances as "<id of the one Play starts> <version Horizon's own instance is pinned to, or ->".
 instances() {
