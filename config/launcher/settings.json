@@ -1,5 +1,5 @@
 {
-  "selected": "native-fdc87ae-m1-daily7-73decc0fdc30",
+  "selected": "native-fdc87ae-m1-daily7-fix3-960d547ba1bd",
   "game_architecture": "auto",
   "minecraft_dir": null,
   "server_dir": null,
@@ -8,11 +8,16 @@
   "skip_opening": true,
   "appearance": "dark",
   "ping_notice_seen": true,
+  "ping_off": false,
+  "effects": {
+    "glow": true,
+    "gradients": true,
+    "sheen": true
+  },
+  "welcomed": false,
   "owner_notice_seen": true,
   "partner_seen_secs": 180,
   "partner_hidden": true,
   "while_playing": "hide",
-  "accent": "amber",
-  "native_profile": "release",
-  "native_cache_gib": 8
+  "accent": "amber"
 }

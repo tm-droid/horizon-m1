@@ -31,15 +31,18 @@ pgrep -qf 'MacOS/horizon-launcher( -psn[^ ]*)?$' && die "The Horizon launcher is
 # Answers from the last run. An update with all of them asks nothing.
 PREV=$(cat "$M1DIR/version.txt" 2>/dev/null || true)
 SAVED_LOOK=$(cat "$M1DIR/look.txt" 2>/dev/null || true)
+# look.txt is full or plain. Builds up to daily7-fix3 saved 1 (full), 2 (fast, now the same as full) or 3 (plain).
+case "$SAVED_LOOK" in full|1|2) SAVED_LOOK=1 ;; plain|3) SAVED_LOOK=2 ;; *) SAVED_LOOK= ;; esac
 SAVED_MODE=$(cat "$M1DIR/mode.txt" 2>/dev/null || true)
 SAVED_NAME=$(cat "$M1DIR/player.txt" 2>/dev/null || true)
 UPDATE=0
-if [[ -z "${HM1_ASK:-}" && "$SAVED_LOOK" == [123] && ( "$SAVED_MODE" == microsoft || ( "$SAVED_MODE" == offline && -n "$SAVED_NAME" ) ) ]]; then
+if [[ -z "${HM1_ASK:-}" && -n "$SAVED_LOOK" && ( "$SAVED_MODE" == microsoft || ( "$SAVED_MODE" == offline && -n "$SAVED_NAME" ) ) ]]; then
   UPDATE=1
   : ${HM1_LOOK:=$SAVED_LOOK}
   [[ "$SAVED_MODE" == offline ]] && { : ${HM1_MODE:=2}; : ${HM1_NAME:=$SAVED_NAME}; } || : ${HM1_MODE:=1}
   WHO="Microsoft account"; [[ "$HM1_MODE" == 2 ]] && WHO="offline as ${HM1_NAME:-}"
-  print "Updating${PREV:+ from ${${PREV##*-m1-}%-*}}. Keeping your choices: look $HM1_LOOK, $WHO."
+  LOOKNAME=full; [[ "$HM1_LOOK" == 2 ]] && LOOKNAME=plain
+  print "Updating${PREV:+ from ${${PREV##*-m1-}%-*}}. Keeping your choices: $LOOKNAME look, $WHO."
   print "(To change them, run the installer with HM1_ASK=1.)\n"
 fi
 
@@ -135,35 +138,34 @@ make_app() {
 
 # 6. The full look: resource packs + shader. Never overwrites pack files; keeps the player's own packs enabled.
 print ""
-print -P "%BInstall the full look (64 resource packs + MakeUp shader)?%b"
-print "  1) Full look   all packs + shader (recommended, about 45 fps on an M1 Air)"
-print "  2) Fast look   same without Optimized Bushy Leaves (about 58 fps)"
-print "  3) Plain       no packs, no shader (fastest)"
+print -P "%BInstall the full look (63 resource packs + MakeUp shader)?%b"
+print "  1) Full look   all packs + shader (recommended, about 58 fps on an M1 Air)"
+print "  2) Plain       no packs, no shader (fastest)"
 REPLY="${HM1_LOOK:-}"
-[[ -n "$REPLY" ]] || ask "Type 1, 2 or 3 and press Return [1]:"
+[[ -n "$REPLY" ]] || ask "Type 1 or 2 and press Return [1]:"
 [[ -z "$REPLY" ]] && REPLY=1
-[[ "$REPLY" == [123] ]] || REPLY=3
-print "$REPLY" > "$M1DIR/look.txt"
-if [[ "$REPLY" == [12] ]]; then
-  LOOK="$REPLY"
+[[ "$REPLY" == 1 ]] || REPLY=2
+if [[ "$REPLY" == 1 ]]; then print full; else print plain; fi > "$M1DIR/look.txt"
+if [[ "$REPLY" == 1 ]]; then
   mkdir -p "$GDIR/resourcepacks" "$GDIR/shaderpacks"
   cp -n "$HERE/extras/resourcepacks/"*.zip "$GDIR/resourcepacks/" 2>/dev/null || true
   cp -n "$HERE/extras/shaderpacks/"* "$GDIR/shaderpacks/" 2>/dev/null || true
   SHADER=$(cd "$HERE/extras/shaderpacks" && command ls *.zip | head -1)
   # JavaScript for Automation, built into macOS. (/usr/bin/python3 is only a stub that pops up a
   # "install developer tools" dialog on Macs without the Xcode Command Line Tools.)
-  /usr/bin/osascript -l JavaScript - "$HERE/extras/pack-order.json" "$GDIR" "$LOOK" "$SHADER" <<'JS' >/dev/null || die "Could not write the game settings."
+  /usr/bin/osascript -l JavaScript - "$HERE/extras/pack-order.json" "$GDIR" "$SHADER" <<'JS' >/dev/null || die "Could not write the game settings."
 ObjC.import('Foundation');
 function run(argv) {
-  const [orderF, gd, look, shader] = argv;
+  const [orderF, gd, shader] = argv;
   const read = p => { const s = $.NSString.stringWithContentsOfFileEncodingError(p, $.NSUTF8StringEncoding, null); return s.isNil() ? null : s.js; };
   const write = (p, t) => { if (!$(t).writeToFileAtomicallyEncodingError(p, true, $.NSUTF8StringEncoding, null)) throw new Error('cannot write ' + p); };
   const full = JSON.parse(read(orderF));
-  let packs = full.filter(p => look === '1' || !p.includes('Optimized Bushy Leaves'));
-  // Keep packs the player enabled themselves, on top (last wins).
+  let packs = full;
+  // Keep packs the player enabled themselves, on top (last wins). Optimized Bushy Leaves was part of the look up
+  // to daily7-fix3 and is dropped (about 12 fps and 320 MB on an M1 Air).
   const opts = read(gd + '/options.txt');
   const line = opts === null ? undefined : opts.split(/\r?\n/).find(l => l.startsWith('resourcePacks:'));
-  if (line) { try { packs = packs.concat(JSON.parse(line.slice(14)).filter(p => !full.includes(p))); } catch (e) {} }
+  if (line) { try { packs = packs.concat(JSON.parse(line.slice(14)).filter(p => !full.includes(p) && !p.includes('Optimized Bushy Leaves'))); } catch (e) {} }
   const put = (path, key, value, extra) => {
     const t = read(path);
     const lines = t === null ? extra.slice() : t.split(/\r?\n/);

@@ -5,7 +5,7 @@
 # Downloads the latest release zip, checks its SHA-256, unzips it to a temporary folder and runs
 # "Install Horizon M1.command" from there. Files fetched with curl carry no quarantine flag, so macOS
 # shows no "unidentified developer" warning. Run the same line again to update; worlds are kept.
-# Optional: HM1_LOOK=1|2|3 HM1_MODE=1|2 HM1_NAME=<player> answer the installer's questions,
+# Optional: HM1_LOOK=1|2 HM1_MODE=1|2 HM1_NAME=<player> answer the installer's questions,
 # HM1_ASK=1 asks them again on an update, HM1_START=1 starts the game at the end,
 # HM1_ZIP=<path to a downloaded Horizon-M1 zip> skips the download.
 set -eu

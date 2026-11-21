@@ -13,7 +13,7 @@ them on your Mac from your own copy.
    next to the installer's name, and open it again.)
 2. A Terminal window (a text window, that is normal) asks two questions.
    Type the number and press Return:
-   - the look: 1 full (all packs + shader), 2 fast, 3 plain.
+   - the look: 1 full (all packs + shader), 2 plain.
      Just pressing Return picks 1, the full look;
    - how you play: 1 Microsoft account (normal), then sign in and press Play
      in the Horizon launcher that opens;

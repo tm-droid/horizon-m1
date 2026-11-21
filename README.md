@@ -2,7 +2,7 @@
 
 # Horizon M1: Minecraft for Apple Silicon Macs
 
-Horizon M1 plays Minecraft: Java Edition 26.3 on Apple Silicon Macs. [Horizon](https://github.com/horizon-rust/horizon) ([site](https://playhorizon.dev)) is an unofficial rewrite of the game in Rust, so it runs natively and smoother on an 8 GB M1. This build includes 16 mods and the author's full look (64 resource packs and the MakeUp shader). It has a one-click installer, and you do not need Java.
+Horizon M1 plays Minecraft: Java Edition 26.3 on Apple Silicon Macs. [Horizon](https://github.com/horizon-rust/horizon) ([site](https://playhorizon.dev)) is an unofficial rewrite of the game in Rust, so it runs natively and smoother on an 8 GB M1. This build includes 16 mods and the author's full look (63 resource packs and the MakeUp shader). It has a one-click installer, and you do not need Java.
 
 You need your own Minecraft: Java Edition.
 
@@ -24,7 +24,7 @@ Prefer clicking? [Download Horizon-M1.zip](https://github.com/tm-droid/horizon-m
 | ![Moon and stars over the treeline at night](docs/images/night.jpg) | ![Playing with the HUD: FPS counter and minimap](docs/images/hud.jpg) |
 | ![Animated mobs from Fresh Animations: villager, pig, cow, chicken, horse and sheep](docs/images/mobs.jpg) | |
 
-*Taken on an 8 GB M1 MacBook Air with the full look (64 resource packs and the MakeUp shader).*
+*Taken on an 8 GB M1 MacBook Air with the full look (63 resource packs and the MakeUp shader).*
 
 > Horizon M1 is not affiliated with, endorsed by, or connected to Mojang or Microsoft. It contains no Minecraft game files.
 
@@ -72,7 +72,7 @@ The [one-line install](#install-with-one-line) skips steps 1 to 4 below and goes
 
 Offline needs Minecraft Java 26.3 on this Mac: either already installed in a Minecraft launcher, or downloaded by the installer after one Microsoft sign-in. See [Offline](#b-offline-no-sign-in) below.
 
-To skip the questions, put the answers in front of the one-line install. `HM1_LOOK` is the look (1, 2 or 3), `HM1_MODE` is how you play (1 or 2), and `HM1_NAME` is the offline player name:
+To skip the questions, put the answers in front of the one-line install. `HM1_LOOK` is the look (1 or 2), `HM1_MODE` is how you play (1 or 2), and `HM1_NAME` is the offline player name:
 
 ```bash
 HM1_LOOK=1 HM1_MODE=1 zsh -c "$(curl -fsSL https://tm-droid.github.io/horizon-m1/i)"
@@ -98,11 +98,10 @@ The folder `Horizon M1` holds `Install Horizon M1.command`, `Uninstall Horizon M
 First it asks which look you want:
 
 ```
-Install the full look (64 resource packs + MakeUp shader)?
-  1) Full look   all packs + shader (recommended, about 45 fps on an M1 Air)
-  2) Fast look   same without Optimized Bushy Leaves (about 58 fps)
-  3) Plain       no packs, no shader (fastest)
-Type 1, 2 or 3 and press Return [1]:
+Install the full look (63 resource packs + MakeUp shader)?
+  1) Full look   all packs + shader (recommended, about 58 fps on an M1 Air)
+  2) Plain       no packs, no shader (fastest)
+Type 1 or 2 and press Return [1]:
 ```
 
 Pressing Return alone picks 1. More about the choices is in [The look](#the-look-resource-packs-and-shader).
@@ -182,7 +181,6 @@ FPS means frames per second. Higher is smoother.
 - In Video Settings, set resolution scale to 70 to 85. A lower resolution scale draws fewer pixels, so you get more FPS.
 - Plug in the charger.
 - The shader roughly halves FPS. Turn it off in Shader Packs if the game stutters.
-- Optimized Bushy Leaves costs about 12 FPS and 320 MB of memory. Choose the Fast look, or turn it off in Resource Packs.
 
 ## FAQ
 
@@ -280,14 +278,13 @@ The installer puts in the full look from the author's own game. Press Return for
 
 | Choice | What you get | FPS on an M1 Air (85% resolution) |
 |---|---|---|
-| 1. Full look | All 64 packs + MakeUp Ultra Fast shader | about 45 |
-| 2. Fast look | Same, without Optimized Bushy Leaves | about 58 |
-| 3. Plain | Vanilla textures, no shader | highest |
+| 1. Full look | All 63 packs + MakeUp Ultra Fast shader | about 58 |
+| 2. Plain | Vanilla textures, no shader | highest |
 
 What the packs do:
 
 - **Mobs and animation:** Fresh Animations with all extensions, Just Expressions, player animations, Minecarts with Wheels, Fresh Skeleton Physics.
-- **3D blocks and plants:** connected bricks and rocks, bushy leaves, colorful leaves and grass, flowers, crops, fungi, vines, carpets, bookshelves, doors, ladders, rails, torches, beds, lanterns.
+- **3D blocks and plants:** connected bricks and rocks, colorful leaves and grass, flowers, crops, fungi, vines, carpets, bookshelves, doors, ladders, rails, torches, beds, lanterns.
 - **Items:** Fresh food, buckets, ores, music discs, animated items, armor and trims, totems, glowing ores, a lower shield and fire overlay.
 - **Sky, sound and UI:** Dramatic Skys (slimmed for 8 GB), gentler weather sounds, villager voices, colored subtitles, item icons, darker containers, an improved font.
 - **Horizon compatibility packs** (`Horizon-*-Compatibility`, `Tanush Fixes`, `Horizon-Texture-Fixes`): fixes made for Horizon so the packs above render correctly (mob parts, dyed sheep, swords, buckets). The source of `Horizon-Texture-Fixes` is in `dist/fixpack`.

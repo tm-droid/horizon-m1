@@ -36,7 +36,7 @@ Full guide: https://github.com/tm-droid/horizon-m1#readme
 
 Mods: AppleSkin, Zoom, FPS Overlay, Minimap Worldmap and Waypoints Reworked, Fullbright, Armor Status, Status Effect HUD, Toggle Sprint, Light Overlay, Chat Heads, Held Item Info, Jade, Dynamic FPS for Rust, Crosshair Indicator, Dynamic Lights, CEM Alias.
 
-Look: 64 resource packs (Fresh Animations family, 3D blocks and plants, Dramatic Skys, UI packs and Horizon compatibility packs) and the MakeUp Ultra Fast shader. Pack credits: `LICENSES/PACKS.md` in the zip.
+Look: 63 resource packs (Fresh Animations family, 3D blocks and plants, Dramatic Skys, UI packs and Horizon compatibility packs) and the MakeUp Ultra Fast shader. Pack credits: `LICENSES/PACKS.md` in the zip.
 
 Unofficial; not affiliated with Mojang Studios or Microsoft. No Minecraft assets are included.
 
