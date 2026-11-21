@@ -6,9 +6,17 @@ Horizon M1 plays Minecraft: Java Edition 26.3 on Apple Silicon Macs. [Horizon](h
 
 You need your own Minecraft: Java Edition.
 
-## [Download Horizon-M1-daily7.zip](https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1-daily7.zip)
+## Install with one line
 
-It is about 210 MB, so it can take a minute or two.
+Open Terminal (press Cmd+Space, type `Terminal`, press Return), paste this line and press Return:
+
+```bash
+zsh -c "$(curl -fsSL https://raw.githubusercontent.com/tm-droid/horizon-m1/main/install.sh)"
+```
+
+It downloads the latest build (about 210 MB), checks it, and starts the installer. No macOS security warnings, no unzipping. Run the same line again later to update.
+
+Prefer clicking? [Download Horizon-M1-daily7.zip](https://github.com/tm-droid/horizon-m1/releases/latest/download/Horizon-M1-daily7.zip) and follow [Quick start](#quick-start).
 
 | | |
 |---|---|
@@ -22,6 +30,7 @@ It is about 210 MB, so it can take a minute or two.
 
 ## Contents
 
+- [Install with one line](#install-with-one-line)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Playing next time](#playing-next-time)
@@ -45,7 +54,9 @@ It is about 210 MB, so it can take a minute or two.
 
 ## Quick start
 
-1. **Download** the zip with the big link at the top of this page.
+The [one-line install](#install-with-one-line) skips steps 1 to 4 below and goes straight to step 5. To install from the zip instead:
+
+1. **Download** the zip with the link at the top of this page.
 2. **Open the zip.** Open Finder and click **Downloads** in the sidebar. Double-click `Horizon-M1-daily7.zip`. You get a folder called `Horizon M1`. (Safari may have unzipped it for you. Then the folder is already there.)
 3. **Open the installer.** Inside the folder, Control-click `Install Horizon M1.command` (or click it with two fingers). Choose **Open**, then click **Open** again in the warning. A normal double-click does not work the first time.
 4. **If macOS blocks it** (macOS 15 or newer): click **Done**. Click the Apple menu, then **System Settings**, then **Privacy & Security**. Scroll to the bottom. Click **Open Anyway** next to the installer's name. Type your Mac password if it asks. Then open the installer again (step 3).
@@ -57,7 +68,13 @@ It is about 210 MB, so it can take a minute or two.
    - **Microsoft account:** the Horizon launcher opens. Sign in, then press **Play**. The first start prepares files and takes a few minutes.
    - **Offline:** it asks for a player name, then makes an app called "Horizon Offline". At "Start it now? (y/n)" type `y` to play.
 
-Offline needs the real Minecraft Java 26.3 installed and opened once first. See [Offline](#b-offline-no-sign-in) below.
+Offline needs Minecraft Java 26.3 on this Mac: either already installed in a Minecraft launcher, or downloaded by the installer after one Microsoft sign-in. See [Offline](#b-offline-no-sign-in) below.
+
+To skip the questions, put the answers in front of the one-line install. `HM1_LOOK` is the look (1, 2 or 3), `HM1_MODE` is how you play (1 or 2), and `HM1_NAME` is the offline player name:
+
+```bash
+HM1_LOOK=1 HM1_MODE=1 zsh -c "$(curl -fsSL https://raw.githubusercontent.com/tm-droid/horizon-m1/main/install.sh)"
+```
 
 ## Playing next time
 
@@ -107,19 +124,20 @@ Pick this if you own Minecraft: Java Edition. You get multiplayer servers and yo
 
 Pick this if you want to play without signing in. Offline mode works for singleplayer, LAN, and servers that run in offline mode. Most public servers (like Hypixel) will not let offline players in. Offline mode has no Microsoft skin.
 
-You need Minecraft: Java Edition 26.3 installed and launched at least once, using the official launcher, Prism, Modrinth App, MultiMC, ATLauncher or GDLauncher. Horizon builds its textures and sounds from your own install.
+Horizon builds its textures and sounds from Minecraft: Java Edition 26.3. The installer gets it one of two ways:
 
-In the official Minecraft Launcher: open **Installations > New installation**, pick version **release 26.3**, save, press **Play** once until the title screen shows, then quit. Do this before running the installer.
+- **Already installed:** if 26.3 was launched once in any Minecraft launcher on this Mac (official launcher, Prism, Modrinth App, MultiMC, ATLauncher, GDLauncher and others), the installer finds it by itself.
+- **Not installed:** type `d` when the installer asks. You sign in once in your browser with the Microsoft account that owns Minecraft, and the installer downloads 26.3 from Mojang. You don't need the Minecraft Launcher, and you can still play offline afterwards.
 
 1. Type `2` in the installer.
 2. At "Pick a player name (3-16 letters, numbers or _):" type a name of 3 to 16 letters, numbers or `_`.
-3. The installer prepares the game from Minecraft 26.3. If it can't find it, it asks "Folder (or Return to try again, q to quit):". Your Minecraft game folder is normally `~/Library/Application Support/minecraft`. To find it in Finder, press Cmd+Shift+G, paste that path and press Return. Then drag the folder into the Terminal window and press Return. (For other launchers, drag the game folder that holds `versions` and `assets`.)
+3. The installer prepares the game from Minecraft 26.3 and prints the folder it used. If it finds none, type `d` to download it (see above). You can also drag a game folder (the one holding `versions` and `assets`) into the Terminal window and press Return.
 4. It creates the "Horizon Offline" app. It shows up in Launchpad. The file is in your home folder's Applications folder: in Finder choose **Go > Home**, then open **Applications**. (The path is `~/Applications/Horizon Offline.app`.)
 5. It asks "Start it now? (y/n)". Type `y` to play.
 
 ### Still blocked by macOS?
 
-Open Terminal: press Cmd+Space, type `Terminal`, press Return. Paste this line and press Return, then double-click the installer again:
+This only happens with the zip. The easiest fix is the [one-line install](#install-with-one-line). Or open Terminal (press Cmd+Space, type `Terminal`, press Return), paste this line and press Return, then double-click the installer again:
 
 ```sh
 xattr -dr com.apple.quarantine ~/Downloads/"Horizon M1"
@@ -165,7 +183,7 @@ FPS means frames per second. Higher is smoother.
 ## FAQ
 
 **Do I need to buy Minecraft?**
-For the Microsoft option, yes: you sign in with an account that owns Minecraft: Java Edition. The offline option does not sign in, but it still needs Minecraft: Java Edition 26.3 installed (and launched once) through a launcher, because Horizon builds its textures and sounds from that install. Horizon M1 contains no Minecraft game files.
+For the Microsoft option, yes: you sign in with an account that owns Minecraft: Java Edition. The offline option plays without signing in, but it still needs Minecraft: Java Edition 26.3 on the Mac, because Horizon builds its textures and sounds from it. Either launch 26.3 once in any launcher, or let the installer download it after one sign-in. Horizon M1 contains no Minecraft game files.
 
 **Is this safe? Why does macOS show a warning?**
 The installer and app are not signed by Apple (that costs a yearly developer fee). They are downloaded from GitHub. macOS warns about anything that does not come from the App Store or a paid Apple developer account, so the warning is expected. To open it anyway, Control-click the installer, choose **Open**, then **Open** again. If that fails, use **Open Anyway** in **System Settings > Privacy & Security**, or the `xattr` command in [Install details](#install-details). The source patches are in this repo, and the release page lists the zip's SHA-256 checksum so you can check your download (see [Check your download](#check-your-download)).
@@ -194,7 +212,7 @@ Follow the steps in [Quick start](#quick-start), steps 3 and 4: Control-click > 
 Quit it with Cmd+Q, then run the installer again.
 
 **The installer says it "could not find Minecraft 26.3".**
-Launch Minecraft: Java Edition 26.3 once in your Minecraft launcher, then run the installer again. Or drag the launcher's game folder (the one holding `versions` and `assets`) into the installer window when it asks, then press Return. See [B. Offline](#b-offline-no-sign-in).
+Type `d` to sign in once and download it from Mojang. Or launch 26.3 once in your Minecraft launcher and press Return to try again. See [B. Offline](#b-offline-no-sign-in).
 
 **The game crashes or won't start.**
 Print the logs with:
@@ -214,7 +232,13 @@ See the [tips above](#tips-for-smooth-fps-on-8-gb).
 
 ## Uninstall
 
-Double-click `Uninstall Horizon M1.command` in the `Horizon M1` folder (open it the same way as the installer). It moves Horizon to the Trash. It asks before it touches your worlds. Type `DELETE` if you also want your worlds moved to the Trash.
+Paste this line into Terminal and press Return:
+
+```bash
+zsh -c "$(curl -fsSL https://raw.githubusercontent.com/tm-droid/horizon-m1/main/dist/uninstall.command)"
+```
+
+Or double-click `Uninstall Horizon M1.command` in the `Horizon M1` folder from the zip (open it the same way as the installer). It moves Horizon to the Trash. It asks before it touches your worlds. Type `DELETE` if you also want your worlds moved to the Trash.
 
 To do it by hand, delete these:
 
@@ -324,7 +348,7 @@ again: it selects the M1 build again and keeps your worlds.
   ```sh
   /Applications/Horizon.app/Contents/MacOS/horizon-launcher settings selected-version native-fdc87ae-m1-daily7-73decc0fdc30
   ```
-- For a new M1 build, download the new zip and run its installer. Your worlds are kept.
+- For a new M1 build, run the [one-line install](#install-with-one-line) again (or download the new zip and run its installer). Your worlds are kept.
 
 ### Where things live
 
@@ -335,7 +359,7 @@ again: it selects the M1 build again and keeps your worlds.
 
 ### Check your download
 
-Release page: <https://github.com/tm-droid/horizon-m1/releases/latest>. The page lists the SHA-256 checksum of the zip. To check your download, run `shasum -a 256 ~/Downloads/Horizon-M1-daily7.zip` in Terminal and compare the result with the release page.
+The one-line install checks the download by itself. For the zip: the release page <https://github.com/tm-droid/horizon-m1/releases/latest> lists the SHA-256 checksum of the zip. To check your download, run `shasum -a 256 ~/Downloads/Horizon-M1-daily7.zip` in Terminal and compare the result with the release page.
 
 ## Credits and licenses
 

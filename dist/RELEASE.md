@@ -8,7 +8,17 @@ Horizon is a native Rust client for Minecraft Java 26.3. This build is tuned for
 - About 2 GB free disk space
 - Minecraft: Java Edition (your own copy)
 
-## Quick install
+## Install with one line (easiest)
+
+Open Terminal (Cmd+Space, type Terminal, Return), paste this and press Return:
+
+```bash
+zsh -c "$(curl -fsSL https://raw.githubusercontent.com/tm-droid/horizon-m1/main/install.sh)"
+```
+
+It downloads and checks the zip below, then runs the installer. No macOS security warnings. Run it again later to update.
+
+## Or install from the zip
 
 1. Download `Horizon-M1-daily7.zip` below.
 2. Unzip it.

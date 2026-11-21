@@ -18,8 +18,9 @@ them on your Mac from your own copy.
    - how you play: 1 Microsoft account (normal), then sign in and press Play
      in the Horizon launcher that opens;
      or 2 Offline (no sign-in): pick a player name, then play with
-     "Horizon Offline" from Launchpad. Offline needs Minecraft Java 26.3
-     installed and launched once in a Minecraft launcher first.
+     "Horizon Offline" from Launchpad. Offline needs Minecraft Java 26.3:
+     the installer finds it if it was launched once in any Minecraft
+     launcher, or type d to sign in once and download it from Mojang.
 3. Next time: open Horizon (Microsoft) or Horizon Offline from Launchpad.
    No need to run the installer again.
 4. Your worlds live in ~/Library/Application Support/horizon

@@ -93,7 +93,8 @@ print -P "%BInstall the full look (64 resource packs + MakeUp shader)?%b"
 print "  1) Full look   all packs + shader (recommended, about 45 fps on an M1 Air)"
 print "  2) Fast look   same without Optimized Bushy Leaves (about 58 fps)"
 print "  3) Plain       no packs, no shader (fastest)"
-ask "Type 1, 2 or 3 and press Return [1]:"
+REPLY="${HM1_LOOK:-}"
+[[ -n "$REPLY" ]] || ask "Type 1, 2 or 3 and press Return [1]:"
 [[ -z "$REPLY" ]] && REPLY=1
 if [[ "$REPLY" == [12] ]]; then
   LOOK="$REPLY"
@@ -101,32 +102,33 @@ if [[ "$REPLY" == [12] ]]; then
   cp -n "$HERE/extras/resourcepacks/"*.zip "$GDIR/resourcepacks/" 2>/dev/null || true
   cp -n "$HERE/extras/shaderpacks/"* "$GDIR/shaderpacks/" 2>/dev/null || true
   SHADER=$(cd "$HERE/extras/shaderpacks" && command ls *.zip | head -1)
-  /usr/bin/python3 - "$HERE/extras/pack-order.json" "$GDIR" "$LOOK" "$SHADER" <<'PY' || die "Could not write the game settings."
-import json, sys
-order_f, gd, look, shader = sys.argv[1:]
-full = json.load(open(order_f))
-packs = [p for p in full if look == "1" or "Optimized Bushy Leaves" not in p]
-# Keep packs the player enabled themselves, on top (last wins).
-try:
-    line = next(l for l in open(f"{gd}/options.txt", encoding="utf-8") if l.startswith("resourcePacks:"))
-    packs += [p for p in json.loads(line.split(":", 1)[1]) if p not in full]
-except (FileNotFoundError, StopIteration, ValueError):
-    pass
-def put(path, key, value, extra=()):
-    try:
-        lines = open(path, encoding="utf-8").read().splitlines()
-    except FileNotFoundError:
-        lines = list(extra)
-    new = f"{key}:{value}"
-    for i, l in enumerate(lines):
-        if l.startswith(key + ":"):
-            lines[i] = new; break
-    else:
-        lines.append(new)
-    open(path, "w", encoding="utf-8").write("\n".join(lines) + "\n")
-put(f"{gd}/options.txt", "resourcePacks", json.dumps(packs, separators=(",", ":")), ["incompatibleResourcePacks:[]"])
-put(f"{gd}/horizon-graphics.txt", "pickedShaderPack", shader)
-PY
+  # JavaScript for Automation, built into macOS. (/usr/bin/python3 is only a stub that pops up a
+  # "install developer tools" dialog on Macs without the Xcode Command Line Tools.)
+  /usr/bin/osascript -l JavaScript - "$HERE/extras/pack-order.json" "$GDIR" "$LOOK" "$SHADER" <<'JS' >/dev/null || die "Could not write the game settings."
+ObjC.import('Foundation');
+function run(argv) {
+  const [orderF, gd, look, shader] = argv;
+  const read = p => { const s = $.NSString.stringWithContentsOfFileEncodingError(p, $.NSUTF8StringEncoding, null); return s.isNil() ? null : s.js; };
+  const write = (p, t) => { if (!$(t).writeToFileAtomicallyEncodingError(p, true, $.NSUTF8StringEncoding, null)) throw new Error('cannot write ' + p); };
+  const full = JSON.parse(read(orderF));
+  let packs = full.filter(p => look === '1' || !p.includes('Optimized Bushy Leaves'));
+  // Keep packs the player enabled themselves, on top (last wins).
+  const opts = read(gd + '/options.txt');
+  const line = opts === null ? undefined : opts.split(/\r?\n/).find(l => l.startsWith('resourcePacks:'));
+  if (line) { try { packs = packs.concat(JSON.parse(line.slice(14)).filter(p => !full.includes(p))); } catch (e) {} }
+  const put = (path, key, value, extra) => {
+    const t = read(path);
+    const lines = t === null ? extra.slice() : t.split(/\r?\n/);
+    if (t !== null && lines[lines.length - 1] === '') lines.pop();
+    const i = lines.findIndex(l => l.startsWith(key + ':'));
+    if (i >= 0) lines[i] = key + ':' + value; else lines.push(key + ':' + value);
+    write(path, lines.join('\n') + '\n');
+  };
+  put(gd + '/options.txt', 'resourcePacks', JSON.stringify(packs), ['incompatibleResourcePacks:[]']);
+  put(gd + '/horizon-graphics.txt', 'pickedShaderPack', shader, []);
+  return '';
+}
+JS
   say "Installed the look (resource packs + $SHADER)"
 fi
 
@@ -134,25 +136,46 @@ print ""
 print -P "%BHow will you play?%b"
 print "  1) Microsoft account  (normal: multiplayer servers, your skin)"
 print "  2) Offline            (no sign-in: singleplayer, LAN and offline-mode servers)"
-ask "Type 1 or 2 and press Return:"
+REPLY="${HM1_MODE:-}"
+[[ -n "$REPLY" ]] || ask "Type 1 or 2 and press Return:"
 case "$REPLY" in
   2)
-    NAME=""
+    NAME="${HM1_NAME:-}"
     while [[ ! "$NAME" =~ '^[A-Za-z0-9_]{3,16}$' ]]; do
       ask "Pick a player name (3-16 letters, numbers or _):"; NAME="$REPLY"
     done
     print "$NAME" > "$M1DIR/player.txt"
 
+    # Any launcher folder on this Mac that holds Minecraft 26.3 (official launcher, Prism and its forks,
+    # MultiMC, Modrinth App, ATLauncher, GDLauncher...), tried one by one.
+    auto_prepare() {
+      local d
+      for d in "$HOME/Library/Application Support/"*(N/) "$HOME/.minecraft"(N/); do
+        [[ "${d:t}" == horizon* ]] && continue
+        [[ -d "$d/assets" || -d "$d/meta/assets" ]] || continue
+        [[ -n "$(find "$d" -maxdepth 5 -type d -name 26.3 2>/dev/null | head -1)" ]] || continue
+        print "   Found Minecraft 26.3 in ${d/#$HOME/~}, preparing from it (a few minutes)"
+        "$CLI" prepare --minecraft "$d" --version "$TAG" >>"$M1DIR/prepare.log" 2>&1 && return 0
+        print "   That folder did not work (details: ${M1DIR/#$HOME/~}/prepare.log)"
+      done
+      return 1
+    }
+
     say "Preparing the game's textures and sounds from your Minecraft: Java Edition install"
     print "   (needs Minecraft Java 26.3 installed and launched once, from the official launcher,"
     print "    Prism, Modrinth App, MultiMC, ATLauncher or GDLauncher)"
-    until [[ -d "$LDIR/versions/$TAG/.local/horizon-client/26.3" ]] || "$CLI" prepare --version "$TAG"; do
+    until [[ -d "$LDIR/versions/$TAG/.local/horizon-client/26.3" ]] || "$CLI" prepare --version "$TAG" || auto_prepare; do
       print ""
-      print "Horizon could not find Minecraft Java 26.3. Launch 26.3 once in your Minecraft launcher,"
-      print "or drag your launcher's game folder (the one holding 'versions' and 'assets') into this window."
-      ask "Folder (or Return to try again, q to quit):"
+      print "Horizon could not find Minecraft Java 26.3. Pick one:"
+      print "  d       download it from Mojang (sign in once with a Microsoft account that owns Minecraft)"
+      print "  Return  try again, after launching 26.3 once in your Minecraft launcher"
+      print "  folder  drag your launcher's game folder (the one holding 'versions' and 'assets') into this window"
+      ask "Type d, press Return, drag a folder, or type q to quit:"
       [[ "$REPLY" == q ]] && die "Not prepared. Run this installer again when Minecraft 26.3 is installed."
-      if [[ -n "$REPLY" ]]; then
+      if [[ "$REPLY" == d ]]; then
+        print "A browser page opens: type the code shown here and sign in."
+        "$CLI" account sign-in && "$CLI" prepare --download --version "$TAG" || print "The download did not finish."
+      elif [[ -n "$REPLY" ]]; then
         DIR="${${REPLY%% }//\\ / }"; DIR="${DIR//\'/}"
         "$CLI" settings minecraft-dir "$DIR" >/dev/null || print "That folder was refused."
       fi
