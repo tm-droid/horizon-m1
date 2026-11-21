@@ -28,7 +28,8 @@ them on your Mac from your own copy.
 4. Your worlds live in ~/Library/Application Support/horizon
 
 To remove it: Control-click "Uninstall Horizon M1.command" > Open. It moves
-Horizon to the Trash and asks before touching your worlds.
+only what Horizon M1 added to the Trash (a Horizon you had before stays) and
+asks before touching your worlds.
 
 Something wrong or weird? Message whoever sent you Horizon, or open an issue:
 https://github.com/tm-droid/horizon-m1/issues

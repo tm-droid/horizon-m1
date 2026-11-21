@@ -243,7 +243,7 @@ Paste this line into Terminal and press Return:
 zsh -c "$(curl -fsSL https://raw.githubusercontent.com/tm-droid/horizon-m1/main/dist/uninstall.command)"
 ```
 
-Or double-click `Uninstall Horizon M1.command` in the `Horizon M1` folder from the zip (open it the same way as the installer). It moves Horizon to the Trash. It asks before it touches your worlds. Type `DELETE` if you also want your worlds moved to the Trash.
+Or double-click `Uninstall Horizon M1.command` in the `Horizon M1` folder from the zip (open it the same way as the installer). It moves to the Trash only what the Horizon M1 installer added. If you had Horizon before Horizon M1, your launcher, its other versions, your accounts and your own packs stay, and the launcher's settings go back to what they were. It asks before it touches your game folder; type `DELETE` only if you also want your worlds moved to the Trash.
 
 To do it by hand, delete these:
 

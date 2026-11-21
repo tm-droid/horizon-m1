@@ -26,7 +26,31 @@ print -P "%BHorizon M1 installer%b  (build $SHORT)\n"
 [[ "$(uname -m)" == arm64 ]] || die "This build is for Apple Silicon Macs (M1/M2/M3/M4) only."
 [[ -d "$HERE/Horizon.app" && -d "$HERE/game/$TAG" && -d "$HERE/game/$BASE" ]] || die "Run this from inside the unzipped \"Horizon M1\" folder."
 pgrep -qx horizon-client && die "Horizon is running. Quit the game first."
-pgrep -qf 'MacOS/horizon-launcher( -psn[^ ]*)?$' && die "The Horizon launcher is open. Quit it (Cmd+Q) first."
+# By process name, whatever its arguments: an open launcher window keeps its settings in memory and writes
+# them back later, undoing the version picked below.
+pgrep -qx horizon-launcher && die "The Horizon launcher is open. Quit it (Cmd+Q) first."
+
+# The launcher's instances as "<id of the one Play starts> <version Horizon's own instance is pinned to, or ->".
+instances() {
+  local f rc
+  f=$(mktemp) || return 1
+  "$CLI" instance --json list >"$f" 2>/dev/null || { rm -f "$f"; return 1; }
+  /usr/bin/osascript -l JavaScript - "$f" <<'JS'
+ObjC.import('Foundation');
+function run(argv) {
+  const l = JSON.parse($.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null).js);
+  const sel = l.find(i => i.selected), h = l.find(i => i.id == 'horizon');
+  return (sel ? sel.id : '-') + ' ' + (h && h.version ? h.version : '-');
+}
+JS
+  rc=$?; rm -f "$f"; return $rc
+}
+
+# Copies $1 to $GDIR/$2 only if the player has no such file, and notes it in added.txt for the uninstaller.
+add_file() {
+  [[ -e "$GDIR/$2" ]] && return 0
+  mkdir -p "$GDIR/${2:h}" && cp "$1" "$GDIR/$2" && print -r -- "$2" >> "$M1DIR/added.txt"
+}
 
 # Answers from the last run. An update with all of them asks nothing.
 PREV=$(cat "$M1DIR/version.txt" 2>/dev/null || true)
@@ -45,6 +69,40 @@ if [[ -z "${HM1_ASK:-}" && -n "$SAVED_LOOK" && ( "$SAVED_MODE" == microsoft || (
   print "Updating${PREV:+ from ${${PREV##*-m1-}%-*}}. Keeping your choices: $LOOKNAME look, $WHO."
   print "(To change them, run the installer with HM1_ASK=1.)\n"
 fi
+
+# What the player had before Horizon M1, written once by the first install (updates keep it), so the
+# uninstaller removes only what Horizon M1 added and gives back the player's own launcher setup.
+# An install by an older installer has no record: known=0, and the uninstaller asks.
+if [[ ! -e "$M1DIR/before.txt" ]]; then
+  if [[ -n "$PREV" ]]; then
+    B="known=0"
+  else
+    have() { [[ -e "$1" ]] && print 1 || print 0; }
+    B="known=1
+app=$(have "$APP")
+ldir=$(have "$LDIR")
+gdir=$(have "$GDIR")
+minecraft=$(have "$LDIR/minecraft")
+shader=$(sed -n 's/^pickedShaderPack://p' "$GDIR/horizon-graphics.txt" 2>/dev/null | head -1)
+versions=$(find "$LDIR/versions" -mindepth 1 -maxdepth 1 -type d ! -name '*.partial' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+    if [[ -x "$CLI" ]]; then
+      SET=$("$CLI" settings 2>/dev/null || true)
+      INST=$(instances || print '- -')
+      B+="
+selected=$(print -r -- "$SET" | sed -n 's/^selected_version: "\(.*\)"$/\1/p')
+install_new=$(print -r -- "$SET" | sed -n 's/^install_new_versions: //p')
+prune=$(print -r -- "$SET" | sed -n 's/^prune_old_versions: //p')
+instance=${INST% *}
+pin=${INST#* }"
+    fi
+  fi
+  mkdir -p "$M1DIR"
+  print -r -- "$B" > "$M1DIR/before.txt"
+fi
+mkdir -p "$M1DIR"
+# The versions this installer put in (the uninstaller removes only these). An older install noted none:
+# its current build is surely ours.
+[[ -e "$M1DIR/versions.txt" || -z "$PREV" ]] || print -r -- "$PREV" > "$M1DIR/versions.txt"
 
 say "Clearing the download quarantine on this folder"
 xattr -dr com.apple.quarantine "$HERE" 2>/dev/null || true
@@ -75,7 +133,9 @@ for t in "$BASE" "$TAG"; do
     rm -rf "$LDIR/versions/$t.partial"
     ditto "$HERE/game/$t" "$LDIR/versions/$t.partial"
     mv "$LDIR/versions/$t.partial" "$LDIR/versions/$t"
+    print -r -- "$t" >> "$M1DIR/versions.txt"
   fi
+  # The launcher's own "installed completely" marker: it lists only versions that have it.
   : > "$LDIR/versions/$t/.installed"
 done
 # An update reuses the game files an older build already prepared, when both builds use the same
@@ -90,35 +150,43 @@ fi
 "$CLI" settings selected-version "$TAG" >/dev/null || die "The launcher refused the build. Send the text above to whoever gave you this."
 "$CLI" settings install-new-versions off >/dev/null
 "$CLI" settings prune-old-versions off >/dev/null
+# Play starts the selected instance's pinned version before the launcher's selection, so pin Horizon's own
+# instance to this build and make Play start it. A pin from before (or another selected instance) would
+# otherwise keep playing another version.
+"$CLI" instance version horizon "$TAG" >/dev/null || die "The launcher refused to pin Horizon to the build."
+"$CLI" instance select horizon >/dev/null || die "The launcher refused to select the Horizon instance."
+PLAYS=$(instances || true)
+[[ "$PLAYS" == "horizon $TAG" ]] || die "The launcher does not play $SHORT after setup (it reports: ${PLAYS:-nothing})."
 say "Selected $TAG in the launcher"
-# Old M1 builds this installer put in (they carry the .installed marker) take about 1 GB each. Keep this one,
-# its base release and the one it replaces (a fallback: Settings > selected version in the launcher).
-for d in "$LDIR/versions/"*-m1-*(N/); do
-  t="${d:t}"
-  [[ "$t" == "$TAG" || "$t" == "$BASE" || "$t" == "$PREV" || ! -e "$d/.installed" ]] && continue
-  rm -rf "$d" && say "Removed the old build ${${t##*-m1-}%-*}"
+# Old M1 builds this installer put in take about 1 GB each. Keep this one, its base release and the one it
+# replaces (a fallback: Settings > selected version in the launcher). Never a build the player made.
+typeset -U KEEP; KEEP=()
+for t in ${(f)"$(cat "$M1DIR/versions.txt" 2>/dev/null || true)"}; do
+  if [[ "$t" == *-m1-* && "$t" != "$TAG" && "$t" != "$BASE" && "$t" != "$PREV" && -d "$LDIR/versions/$t" ]]; then
+    rm -rf "$LDIR/versions/$t" && say "Removed the old build ${${t##*-m1-}%-*}"
+  fi
+  if [[ -d "$LDIR/versions/$t" ]]; then KEEP+=("$t"); fi
 done
+print -rl -- $KEEP > "$M1DIR/versions.txt"
 
 # 4. The author's settings tuned for an 8 GB M1: video, controls, mod keys and mod configs.
 #    Each file is added only if the player has none yet, so their own settings are never replaced.
 mkdir -p "$GDIR/config"
 if [[ ! -e "$GDIR/horizon-graphics.txt" ]]; then
-  cp "$HERE/extras/horizon-graphics.txt" "$GDIR/horizon-graphics.txt"
+  add_file "$HERE/extras/horizon-graphics.txt" horizon-graphics.txt
   say "Added M1 graphics settings"
 fi
 for f in options.txt horizon-mods.txt; do
-  [[ -e "$GDIR/$f" ]] || cp "$HERE/extras/settings/$f" "$GDIR/$f"
+  add_file "$HERE/extras/settings/$f" "$f"
 done
-cp -Rn "$HERE/extras/settings/config/" "$GDIR/config/" 2>/dev/null || true
+(cd "$HERE/extras/settings/config" && find . -type f ! -name .DS_Store) | while IFS= read -r f; do
+  add_file "$HERE/extras/settings/config/${f#./}" "config/${f#./}" || true
+done
 # A small minimap (64 instead of the mod's default 128), only if the player has no minimap settings yet.
-MM="$GDIR/horizon-mods/.horizon-mod-data/minimap_worldmap_waypoints_reworked"
-if [[ ! -e "$MM/settings.ini" ]]; then
-  mkdir -p "$MM"; cp "$HERE/extras/minimap/settings.ini" "$MM/settings.ini"
-fi
+add_file "$HERE/extras/minimap/settings.ini" horizon-mods/.horizon-mod-data/minimap_worldmap_waypoints_reworked/settings.ini
 
 # 5. The Horizon M1 app's script (update check, then start) and the offline helper, always installed so
 #    the player can switch later.
-mkdir -p "$M1DIR"
 for f in start.sh play-offline.sh; do
   cp "$HERE/extras/$f" "$M1DIR/$f"; chmod +x "$M1DIR/$f"
 done
@@ -148,8 +216,9 @@ REPLY="${HM1_LOOK:-}"
 if [[ "$REPLY" == 1 ]]; then print full; else print plain; fi > "$M1DIR/look.txt"
 if [[ "$REPLY" == 1 ]]; then
   mkdir -p "$GDIR/resourcepacks" "$GDIR/shaderpacks"
-  cp -n "$HERE/extras/resourcepacks/"*.zip "$GDIR/resourcepacks/" 2>/dev/null || true
-  cp -n "$HERE/extras/shaderpacks/"* "$GDIR/shaderpacks/" 2>/dev/null || true
+  for f in "$HERE/extras/resourcepacks/"*.zip(N) "$HERE/extras/shaderpacks/"*(N.); do
+    add_file "$f" "${f:h:t}/${f:t}" || true
+  done
   SHADER=$(cd "$HERE/extras/shaderpacks" && command ls *.zip | head -1)
   # JavaScript for Automation, built into macOS. (/usr/bin/python3 is only a stub that pops up a
   # "install developer tools" dialog on Macs without the Xcode Command Line Tools.)
