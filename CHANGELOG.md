@@ -3,6 +3,14 @@
 Each section is one Horizon M1 build. `dist/release.sh` copies the section of the build it publishes into the
 release notes, so add the section before releasing.
 
+<!-- Rename "Unreleased" to the build's short name (for example daily8-fix1) before running dist/release.sh. -->
+## Unreleased
+
+- Faster full look: Optimized Bushy Leaves is removed (about +12 fps and 320 MB less memory on an M1 Air).
+  The full look is now 63 packs at about 58 fps.
+- The installer asks two looks instead of three: 1 full or 2 plain. The Fast look is gone because it is now
+  the same as the full look. Updating keeps your choice and turns Optimized Bushy Leaves off.
+
 ## daily7-fix3
 
 - Updates itself: the new **Horizon M1** app (in Launchpad) checks for a new build once a day and asks before
