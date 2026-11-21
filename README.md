@@ -205,6 +205,9 @@ No. This build is for Apple Silicon Macs (M1, M2, M3 or M4) only.
 
 ## Troubleshooting
 
+**Something went wrong or looks weird?**
+Message whoever sent you Horizon, or [open an issue](https://github.com/tm-droid/horizon-m1/issues/new) with what happened. A log link from `share-log` (below, under "The game crashes") helps a lot.
+
 **macOS says the installer is "damaged" or "can't be opened".**
 Follow the steps in [Quick start](#quick-start), steps 3 and 4: Control-click > Open, **Open Anyway** in System Settings, or the `xattr` command in [Install details](#install-details).
 
@@ -346,9 +349,9 @@ again: it selects the M1 build again and keeps your worlds.
 - The launcher may offer newer Horizon releases. The installer turned off auto-install so the M1 build stays selected. Only install a newer release if you want to leave the M1 build.
 - To go back after trying another version, pick the M1 build in the launcher under Settings > selected version, or run:
   ```sh
-  /Applications/Horizon.app/Contents/MacOS/horizon-launcher settings selected-version native-fdc87ae-m1-daily7-73decc0fdc30
+  /Applications/Horizon.app/Contents/MacOS/horizon-launcher settings selected-version native-fdc87ae-m1-daily7-fix3-960d547ba1bd
   ```
-- For a new M1 build, run the [one-line install](#install-with-one-line) again (or download the new zip and run its installer). Your worlds are kept.
+- For a new M1 build, run the [one-line install](#install-with-one-line) again (or download the new zip and run its installer). Worlds, packs, shaders, settings, mod settings and your own mods carry over. The built-in mods come with every M1 build. The game files prepared from Minecraft 26.3 carry over too when the new build prepares them the same way; if not, the installer asks for 26.3 once more.
 
 ### Where things live
 

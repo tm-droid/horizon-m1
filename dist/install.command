@@ -14,7 +14,8 @@ CLI="$APP/Contents/MacOS/horizon-launcher"
 M1DIR="$LDIR/horizon-m1"
 
 say() { print -P "%B==>%b $*"; }
-die() { print -P "%F{red}%BError:%b%f $*" >&2; print "Press Return to close."; read -r _; exit 1; }
+HELP="Need help? Message whoever sent you Horizon, or open an issue: https://github.com/tm-droid/horizon-m1/issues"
+die() { print -P "%F{red}%BError:%b%f $*" >&2; print "$HELP"; print "Press Return to close."; read -r _; exit 1; }
 ask() { print -n "$1 "; read -r REPLY || { print "\nInput closed."; exit 1; }; }
 
 clear 2>/dev/null || true
@@ -57,6 +58,13 @@ for t in "$BASE" "$TAG"; do
   fi
   : > "$LDIR/versions/$t/.installed"
 done
+# An update reuses the game files an older build already prepared, when both builds use the same
+# preparer: the launcher's `versions` command copies them in. Then no Minecraft install is needed again.
+PREPARED="$LDIR/versions/$TAG/.local/horizon-client/26.3/horizon-resources.json"
+if [[ ! -e "$PREPARED" ]]; then
+  "$CLI" versions >/dev/null 2>&1 || true
+  [[ -e "$PREPARED" ]] && say "Reused the game files your previous Horizon build prepared"
+fi
 
 # 3. Select it and stop auto-updates from replacing or pruning it
 "$CLI" settings selected-version "$TAG" >/dev/null || die "The launcher refused the build. Send the text above to whoever gave you this."

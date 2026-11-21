@@ -28,5 +28,8 @@ them on your Mac from your own copy.
 To remove it: Control-click "Uninstall Horizon M1.command" > Open. It moves
 Horizon to the Trash and asks before touching your worlds.
 
+Something wrong or weird? Message whoever sent you Horizon, or open an issue:
+https://github.com/tm-droid/horizon-m1/issues
+
 Full guide and troubleshooting: https://github.com/tm-droid/horizon-m1#readme
 Credits and licenses: the LICENSES folder.

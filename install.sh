@@ -9,7 +9,7 @@
 set -eu
 
 REPO="tm-droid/horizon-m1"
-die() { print -P "%F{red}%BError:%b%f $*" >&2; exit 1; }
+die() { print -P "%F{red}%BError:%b%f $*" >&2; print "Need help? Message whoever sent you Horizon, or open an issue: https://github.com/$REPO/issues" >&2; exit 1; }
 
 [[ "$(uname -m)" == arm64 ]] || die "Horizon M1 is for Apple Silicon Macs (M1/M2/M3/M4) only."
 FREE_KB=$(df -k "$HOME" | awk 'NR==2 {print $4}')
