@@ -19,12 +19,14 @@ Full guide: see the README at https://github.com/tm-droid/horizon-m1#readme
 
 ## Included mods
 
-AppleSkin, Zoom, Minimap, FPS Overlay, Minimap Worldmap and Waypoints Reworked, Fullbright, Armor Status, Status Effect HUD, Toggle Sprint, Light Overlay, Chat Heads, Held Item Info, Jade, Dynamic FPS for Rust, Crosshair Indicator, Dynamic Lights, CEM Alias
+AppleSkin, Zoom, FPS Overlay, Minimap Worldmap and Waypoints Reworked, Fullbright, Armor Status, Status Effect HUD, Toggle Sprint, Light Overlay, Chat Heads, Held Item Info, Jade, Dynamic FPS for Rust, Crosshair Indicator, Dynamic Lights, CEM Alias
 
 ## Included look
 
 64 resource packs (Fresh Animations family, 3D blocks and plants, Dramatic Skys, UI packs and Horizon compatibility packs) and the MakeUp Ultra Fast shader. Installed by default; the installer also offers a fast or plain look. Pack credits: `LICENSES/PACKS.md`.
 
+Mob fixes in this build: mooshroom mushrooms sit on the back, slimes have a see-through outer layer, and charged creepers show their aura.
+
 Credits and licenses are in the `LICENSES` folder of the zip. Unofficial; not affiliated with Mojang Studios or Microsoft. No Minecraft assets are included.
 
-SHA-256: d483e208955dc17df42bbb582c22cf2e1834aaf34b3c27b4d44252ecb459c0c5
+SHA-256: f08b453d83f03e6ee715f23f6cfea433ebdbd0b275fd96bdbbeb82c924154a1e

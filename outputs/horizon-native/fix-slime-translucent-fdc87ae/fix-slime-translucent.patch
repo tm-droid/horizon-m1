@@ -1,0 +1,210 @@
+diff --git a/crates/horizon-client-render/src/gfx/entity_batch.rs b/crates/horizon-client-render/src/gfx/entity_batch.rs
+index d66dc5c..15b9858 100644
+--- a/crates/horizon-client-render/src/gfx/entity_batch.rs
++++ b/crates/horizon-client-render/src/gfx/entity_batch.rs
+@@ -52,6 +52,12 @@ pub fn mark_oit(quads: &mut [Vertex]) {
+         }
+     }
+ }
++/// Whether a quad of an entity is drawn by `RenderTypes.entityTranslucent` (a slime's outer
++/// cube, a horse's markings, the breeze's wind): tagged `OIT_ENTITY` without the HDR tier the
++/// eyes render type and experience orbs carry, which keep their own draws.
++pub(super) fn translucent_part(layer: u32) -> bool {
++    layer & OIT_ENTITY != 0 && (layer >> 16) & 0xff == 0
++}
+ /// The overlay of depth-only quads that hide water (`RenderTypes.waterMask`).
+ pub const WATER_MASK_OVERLAY: u32 = 13;
+ /// The overlay of energy swirl quads (`RenderTypes.energySwirl`: the charged creeper's and the
+@@ -111,6 +117,9 @@ pub(super) struct EntityBatch {
+     // model's quads share one, so whole runs are copied at once. Cleared each
+     // frame, keeping their storage.
+     runs: [Vec<(usize, usize)>; MATERIALS],
++    /// Runs of the first material's `entityTranslucent` quads (improved transparency off):
++    /// copied after its other runs, so they blend over every opaque entity.
++    late: Vec<(usize, usize)>,
+     pub(super) combined: Vec<Vertex>,
+     /// Additive quads tagged `OIT_ENTITY` that the last `update` moved into the
+     /// last material (improved transparency on): the dragon's eyes, which share
+@@ -136,15 +145,24 @@ impl EntityBatch {
+         for runs in &mut self.runs {
+             runs.clear();
+         }
++        self.late.clear();
++        let key = |layer: u32| {
++            let kind = material(layer, oit);
++            (kind, kind == 0 && translucent_part(layer))
++        };
+         let mut counts = [0usize; MATERIALS];
+         let mut start = 0;
+         while start < quads.len() {
+-            let kind = material(quads[start][0].layer, oit);
++            let (kind, late) = key(quads[start][0].layer);
+             let end = quads[start + 1..]
+                 .iter()
+-                .position(|quad| material(quad[0].layer, oit) != kind)
++                .position(|quad| key(quad[0].layer) != (kind, late))
+                 .map_or(quads.len(), |n| start + 1 + n);
+-            self.runs[kind].push((start, end - start));
++            if late {
++                self.late.push((start, end - start));
++            } else {
++                self.runs[kind].push((start, end - start));
++            }
+             counts[kind] += end - start;
+             start = end;
+         }
+@@ -152,11 +170,17 @@ impl EntityBatch {
+         self.combined.clear();
+         self.combined
+             .reserve(entity_vertices + additive.len() + hand.len() + see_through.len());
+-        for runs in &self.runs[..10] {
++        for (kind, runs) in self.runs[..10].iter().enumerate() {
+             for &(first, count) in runs {
+                 self.combined
+                     .extend_from_slice(&entities[first * 4..(first + count) * 4]);
+             }
++            if kind == 0 {
++                for &(first, count) in &self.late {
++                    self.combined
++                        .extend_from_slice(&entities[first * 4..(first + count) * 4]);
++                }
++            }
+         }
+         // `RenderTypes.eyes` is blended like the other entities, not added: with
+         // improved transparency on, tagged additive quads join the last
+@@ -418,6 +442,33 @@ mod tests {
+         assert_eq!(xs, [0.0, 2.0, 3.0, 1.0, 4.0]);
+     }
+ 
++    #[test]
++    fn translucent_layers_follow_the_opaque_entities_when_off() {
++        let quad = |layer: u32, x: f32| {
++            (0..4).map(move |_| Vertex {
++                pos: [x, 0.0, 0.0],
++                layer,
++                ..geometry(1, false)[0]
++            })
++        };
++        // A slime's outer cube before the next mob; eyes (tiered) keep their place.
++        let entities: Vec<Vertex> = [
++            (0, 0.0),
++            (OIT_ENTITY, 1.0),
++            (OIT_ENTITY | 2 << 16, 2.0),
++            (0, 3.0),
++        ]
++        .into_iter()
++        .flat_map(|(layer, x)| quad(layer, x))
++        .collect();
++        let mut batch = EntityBatch::default();
++        let counts = batch.update(&entities, &[], &[], &[], false);
++        assert_eq!(counts[0], 4);
++        let xs: Vec<f32> = batch.combined.iter().step_by(4).map(|v| v.pos[0]).collect();
++        assert_eq!(xs, [0.0, 2.0, 3.0, 1.0]);
++        assert!(translucent_part(OIT_ENTITY | 5) && !translucent_part(OIT_ENTITY | 1 << 16));
++    }
++
+     #[test]
+     fn tagged_additive_quads_join_the_last_material_only_when_on() {
+         let quad = |layer: u32, x: f32| {
+diff --git a/crates/horizon-client-render/src/gfx/pack_entities.rs b/crates/horizon-client-render/src/gfx/pack_entities.rs
+index 3d49cca..acf51da 100644
+--- a/crates/horizon-client-render/src/gfx/pack_entities.rs
++++ b/crates/horizon-client-render/src/gfx/pack_entities.rs
+@@ -9,6 +9,7 @@ use std::ops::Range;
+ use horizon_shaders::render_stage;
+ 
+ use super::Vertex;
++use super::entity_batch::translucent_part;
+ use super::pack_draw::EntitySpan;
+ 
+ /// `HzDraw`'s size (pack_draw.rs).
+@@ -434,6 +435,14 @@ impl PackEntities {
+         if let Some(skin) = skin {
+             for (span, range, overlay) in skin_runs(skin) {
+                 let program = program_of(&span).expect("tagged skin stage");
++                let program = if program == ENTITY
++                    && drawn[TRANSLUCENT]
++                    && translucent_part(overlay)
++                {
++                    TRANSLUCENT
++                } else {
++                    program
++                };
+                 let pack = drawn[program] && !span.hidden;
+                 let casts = shadow.cast(&span, program);
+                 if !pack && !casts {
+@@ -453,8 +462,8 @@ impl PackEntities {
+         }
+         let first = spans.first().map_or(entities.len(), |s| s.start as usize);
+         extend_without_portals(rest, &entities[..first.min(entities.len())]);
+-        let (mut other, mut portal_faces, mut beam_faces, mut swirl_faces) =
+-            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
++        let (mut other, mut portal_faces, mut beam_faces, mut swirl_faces, mut translucent_faces) =
++            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+         let mut without_fluids = Vec::new();
+         for (span, range) in runs(entities.len(), spans) {
+             let run_start = range.start as u32;
+@@ -486,17 +495,28 @@ impl PackEntities {
+             // is theirs), for gbuffers_beaconbeam.
+             // A mob's energy swirl (charged creeper, powered wither) sits in the mob's own run: the
+             // body goes to the pack's entity program, the swirl to Horizon's additive draw.
++            // An entity's `entityTranslucent` layers (a slime's outer cube) go to the pack's
++            // translucent entity program, blended over the opaque parts drawn before them.
++            let blend_parts = program_of(&span) == Some(ENTITY)
++                && drawn[TRANSLUCENT]
++                && whole.chunks(4).any(|q| translucent_part(q[0].layer));
+             let split = ((program_of(&span) == Some(BLOCK) || span.stage == render_stage("NONE"))
+                 && whole
+                     .chunks(4)
+                     .any(|q| matches!(q[0].layer & 0xffff, 6 | 9 | 10)))
+-                || has_swirl(whole);
+-            let parts: [(&[Vertex], Part); 4] = if split {
++                || has_swirl(whole)
++                || blend_parts;
++            let parts: [(&[Vertex], Part); 5] = if split {
+                 other.clear();
+                 portal_faces.clear();
+                 beam_faces.clear();
+                 swirl_faces.clear();
++                translucent_faces.clear();
+                 for quad in whole.chunks(4) {
++                    if blend_parts && translucent_part(quad[0].layer) {
++                        translucent_faces.extend_from_slice(quad);
++                        continue;
++                    }
+                     match quad[0].layer & 0xffff {
+                         9 | 10 => portal_faces.extend_from_slice(quad),
+                         6 => beam_faces.extend_from_slice(quad),
+@@ -509,6 +529,7 @@ impl PackEntities {
+                     (&portal_faces, Part::Portal),
+                     (&beam_faces, Part::Beam),
+                     (&swirl_faces, Part::Swirl),
++                    (&translucent_faces, Part::Translucent),
+                 ]
+             } else {
+                 [
+@@ -516,6 +537,7 @@ impl PackEntities {
+                     (&[], Part::Plain),
+                     (&[], Part::Plain),
+                     (&[], Part::Plain),
++                    (&[], Part::Plain),
+                 ]
+             };
+             for (run, part) in parts {
+@@ -526,6 +548,7 @@ impl PackEntities {
+                     Part::Portal => Some(BLOCK),
+                     Part::Beam => Some(BEAM),
+                     Part::Swirl => None,
++                    Part::Translucent => Some(TRANSLUCENT).filter(|_| plain(run)),
+                     Part::Plain => program_of(&span).filter(|&p| {
+                         plain(run)
+                             || (p == DESTROY && run.iter().all(|v| matches!(v.layer, 11 | 12)))
+@@ -699,6 +722,8 @@ enum Part {
+     Beam,
+     /// Energy swirl quads: Horizon's own additive draw (`rest`).
+     Swirl,
++    /// An entity's `entityTranslucent` layers: the pack's translucent entity program.
++    Translucent,
+ }
+ 
+ /// Whether a run holds energy swirl quads (`plain` keeps those out of a pack's program).

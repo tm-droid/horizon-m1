@@ -1,0 +1,124 @@
+diff --git a/crates/horizon-client-render/src/gfx/pack_entities.rs b/crates/horizon-client-render/src/gfx/pack_entities.rs
+index acf51da..0a28bca 100644
+--- a/crates/horizon-client-render/src/gfx/pack_entities.rs
++++ b/crates/horizon-client-render/src/gfx/pack_entities.rs
+@@ -547,7 +547,10 @@ impl PackEntities {
+                 let program = match part {
+                     Part::Portal => Some(BLOCK),
+                     Part::Beam => Some(BEAM),
+-                    Part::Swirl => None,
++                    // Horizon's own swirl draw lands under the pack's world, which the pack's
++                    // sky, terrain and entities then cover (it writes no depth): the swirl goes
++                    // to the pack's blended entity program when there is one.
++                    Part::Swirl => Some(TRANSLUCENT).filter(|_| drawn[TRANSLUCENT]),
+                     Part::Translucent => Some(TRANSLUCENT).filter(|_| plain(run)),
+                     Part::Plain => program_of(&span).filter(|&p| {
+                         plain(run)
+@@ -557,7 +560,8 @@ impl PackEntities {
+                 let pack = program.is_some_and(|p| drawn[p]) && !span.hidden;
+                 // Portal faces cast too (a pack's shadow pass sees block entities whole, as Iris
+                 // draws them); beams do not.
+-                let casts = part != Part::Beam && program.is_some_and(|p| shadow.cast(&span, p));
++                let casts = !matches!(part, Part::Beam | Part::Swirl)
++                    && program.is_some_and(|p| shadow.cast(&span, p));
+                 if !pack && !span.hidden {
+                     extend_without_portals(rest, run);
+                 }
+@@ -579,6 +583,9 @@ impl PackEntities {
+                 if part == Part::Portal {
+                     as_portal_texture(&mut self.scratch[start as usize..]);
+                 }
++                if part == Part::Swirl {
++                    as_swirl_texture(&mut self.scratch[start as usize..], crack.1);
++                }
+                 let vertices = self.scratch.len() as u32 - start;
+                 let overlay = self.scratch[start as usize].layer & 0xffff;
+                 let portal = part == Part::Portal;
+@@ -720,7 +727,8 @@ enum Part {
+     Plain,
+     Portal,
+     Beam,
+-    /// Energy swirl quads: Horizon's own additive draw (`rest`).
++    /// Energy swirl quads: the pack's translucent entity program, or Horizon's own additive
++    /// draw (`rest`) without one.
+     Swirl,
+     /// An entity's `entityTranslucent` layers: the pack's translucent entity program.
+     Translucent,
+@@ -1046,6 +1054,29 @@ fn project_cracks(vertices: &mut [Vertex], sprite: [f32; 4], atlas: [u32; 2]) {
+     }
+ }
+ 
++/// Energy swirl quads (`ENERGY_SWIRL_OVERLAY`) as ordinary entity quads for a pack's program:
++/// their sprite-local, scrolling UVs onto the armour sprite whose origin the light bytes and
++/// size the colour bytes carry (fs_energy_swirl), each face's window kept inside the sprite.
++/// Full bright, white at half alpha: blended, it brightens what it covers, as the additive
++/// swirl does.
++fn as_swirl_texture(vertices: &mut [Vertex], atlas: [u32; 2]) {
++    let dims = [atlas[0].max(1) as f32, atlas[1].max(1) as f32];
++    let unpack = |x: u32| [(x & 65535) as f32 / 65535.0, (x >> 16) as f32 / 65535.0];
++    for quad in vertices.as_chunks_mut::<4>().0 {
++        let light = unpack(quad[0].light);
++        let origin = [0, 1].map(|i| (light[i] * dims[i]).round() / dims[i]);
++        let size = unpack(quad[0].color);
++        let min = [0, 1]
++            .map(|i| (quad.iter().map(|v| v.uv[i]).fold(f32::INFINITY, f32::min) + 0.0001).floor());
++        for v in quad {
++            v.uv = [0, 1].map(|i| origin[i] + (v.uv[i] - min[i]).clamp(0.001, 0.999) * size[i]);
++            v.layer = 0;
++            v.light = 0x0000_f0f0;
++            v.color = 0x80ff_ffff;
++        }
++    }
++}
++
+ #[cfg(test)]
+ mod portal_beam_tests {
+     use super::*;
+@@ -1146,6 +1177,30 @@ mod portal_beam_tests {
+         assert!(!has_swirl(&body) && plain(&body));
+     }
+ 
++    #[test]
++    fn a_swirl_face_lands_inside_its_sprite() {
++        // A face scrolled past the sprite's edge, the sprite at (0.5, 0.25) and 0.25 x 0.125.
++        let mut face = quad(
++            super::super::ENERGY_SWIRL_OVERLAY,
++            crate::breaking::stage_light([0.5, 0.25]),
++            [
++                ([0.0; 3], [1.2, 0.4]),
++                ([0.0; 3], [1.5, 0.4]),
++                ([0.0; 3], [1.5, 0.6]),
++                ([0.0; 3], [1.2, 0.6]),
++            ],
++        );
++        for v in &mut face {
++            v.color = crate::breaking::stage_light([0.25, 0.125]);
++        }
++        as_swirl_texture(&mut face, [1024, 1024]);
++        for v in &face {
++            assert!((0.5..=0.75).contains(&v.uv[0]) && (0.25..=0.375).contains(&v.uv[1]));
++            assert_eq!((v.layer, v.light, v.color), (0, 0x0000_f0f0, 0x80ff_ffff));
++        }
++        assert!((face[0].uv[0] - (0.5 + 0.2 * 0.25)).abs() < 1e-3);
++    }
++
+     #[test]
+     fn horizon_keeps_no_portal_or_beam_face_under_a_pack() {
+         let mut run = Vec::new();
+diff --git a/crates/horizon-client/src/mobs/render.rs b/crates/horizon-client/src/mobs/render.rs
+index fb540da..fdd470b 100644
+--- a/crates/horizon-client/src/mobs/render.rs
++++ b/crates/horizon-client/src/mobs/render.rs
+@@ -2308,9 +2308,10 @@ fn render_visible(
+                 crate::gfx::ENERGY_SWIRL_OVERLAY,
+                 out,
+             );
+-            // No lighting: the colour bytes carry the sprite's size (fs_energy_swirl).
++            // No lighting: the colour bytes carry the sprite's size (fs_energy_swirl). The
++            // direction stays for a shader pack's program, which lights the swirl itself.
+             for vertex in &mut out[start..] {
+-                vertex.normal = [0; 4];
++                vertex.normal[3] = 0;
+             }
+         }
+     }
